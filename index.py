@@ -197,6 +197,9 @@ class PostingList:
         self.postings.append(Posting(next_id, doc_id, positions))
         self.size += 1
 
+    def insert_posting(self, posting):
+        self.postings.append(posting)
+
     def get(self, index):
         return self.postings[index]
 

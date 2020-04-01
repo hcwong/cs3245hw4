@@ -17,6 +17,7 @@ POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 K = 10 # Number of search results to display to the user
+AND_KEYWORD = "AND"
 
 def comparator(tup1, tup2):
     """
@@ -49,7 +50,7 @@ def filter_punctuations(s):
             s = s.replace(character, " ")
     return s
 
-def parse_query(query):
+def tokenize_and_process_query(query):
     """
     Takes in a case-folded String previously processed for punctuations, tokenises it, and returns a list of stemmed terms
     """
@@ -140,25 +141,44 @@ def find_term(term):
 def perform_phrase_query(phrase):
     # Defensive programming, if phrase is empty, return false
     if not phrase:
-        return false
-    candidates = find_term(phrase[0])
+        return False
+    phrase_posting_list = find_term(phrase[0])
     for term in phrase[1:]:
         current_term_postings = find_term(term)
-        # First we need to merge by doc_id, then we need to merge by the positional_index as well
+        # Order of arguments matter
+        phrase_posting_list = merge_posting_lists(phrase_posting_list, current_term_postings, True)
 
-    return candidates
+    return phrase_posting_list
 
-# Performs merging of two and terms
-def merge_and(list1, list2):
+# Returns merged positions for phrasal query
+# positions2 comes from the following term and positions1 from
+# the preceeding term
+def merge_positions(positions1, positions2):
+    merged_positions = []
+    L1 = len(positions1)
+    L2 = len(positions2)
+    curr1, curr2 = 0, 0
+    while curr1 < L1 and curr2 < L2:
+        if positions1[curr1] + 1 == positions2[curr2]:
+            # Only merge the position of curr2 because
+            # We only need the position of the preceeding term
+            merged_positions.append(positions2[curr2])
+            curr1 += 1
+            curr2 += 1
+        elif positions1[curr1] + 1 > positions2[curr2]:
+            curr2 += 1
+        else:
+            curr1 += 1
+    return merged_positions
+
+# Performs merging of two postings
+def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     """
     Merges list1 and list2 for the AND boolean operator
     """
-    merged_list = []
+    merged_list = PostingList()
     L1 = len(list1)
     L2 = len(list2)
-    # We do not pass in the skip list into dictionary as it can be calculated in O(1) time on the search side
-    skip_dist1 = math.floor(math.sqrt(L1))
-    skip_dist2 = math.floor(math.sqrt(L2))
     curr1, curr2 = 0, 0
 
     while curr1 < L1 and curr2 < L2:
@@ -166,16 +186,22 @@ def merge_and(list1, list2):
         posting2 = list2[curr2]
         # If both postings have the same doc id, add it to the merged list.
         if posting1.doc_id == posting2.doc_id:
-            merged_list.append(Posting(len(merged_list), posting1.doc_id))
             curr1 += 1
             curr2 += 1
+            if should_perform_merge_positions:
+                merged_positions = merge_positions(posting1.positions, posting2.positions)
+                # Only add the doc_id if the positions are not empty
+                if len(merged_positions > 0):
+                    merged_list.insert(posting1.doc_id, merged_positions)
+            else:
+                merged_list.insert_posting(posting1)
         else:
             # Else if there is a opportunity to jump and the jump is less than the doc_id of the other list
             # then jump, which increments the index by the square root of the length of the list
-            if posting1.jump() != None and posting1.jump() < posting2.doc_id:
-                curr1 = posting1.index + skip_dist1
-            elif posting2.jump() != None and posting2.jump() < posting1.doc_id:
-                curr2 = posting2.index + skip_dist2
+            if posting1.pointer != None and posting1.pointer.doc_id < posting2.doc_id:
+                curr1 = posting1.pointer.index
+            elif posting2.pointer != None and posting2.pointer.doc_id < posting1.doc_id:
+                curr2 = posting2.pointer.index
             # If we cannot jump, then we are left with the only option of incrementing the indexes one by one
             else:
                 if posting1.doc_id < posting2.doc_id:
@@ -183,6 +209,43 @@ def merge_and(list1, list2):
                 else:
                     curr2 += 1
     return merged_list
+
+def parse_query(query):
+    phrasal_regex_pattern = '.*\"(.*)\".*'
+    if AND_KEYWORD in query or re.search(phrasal_regex_pattern, query):
+        return parse_boolean_query
+
+    else:
+        return parse_free_text_query(query)
+
+def parse_boolean_query(query):
+    parse_by_arr = query.split(AND_KEYWORD)
+    stemmer = nltk.stem.porter.Stemmer()
+    parse_by_arr = [stemmer.stem(word.lower()) for word in parse_by_arr]
+    if not arr:
+        return []
+
+    first_term = parse_by_arr[0]
+    res_posting_list = None
+    if " " in candidate:
+        res_posting_list = perform_phrase_query(first_term)
+    else:
+        res_posting_list = find_term(first_term)
+
+    for term in parse_by_arr[1:]:
+        term_posting_list = None
+        if " " in term:
+            term_posting_list = perform_phrase_query(term)
+        else:
+            term_posting_list = find_term(term)
+        res_posting_list = merge_posting_lists(res_posting_list, term_posting_list)
+    return res_posting_list
+
+def parse_free_text_query(query):
+    tokens = tokenize_and_process_query(process(query))
+    res = cosine_score(tokens)
+    return res
+
 
 # Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
 
@@ -213,10 +276,10 @@ def run_search(dict_file, postings_file, queries_file, results_file):
             for line in q_file:
                 # Each line is a query search
                 # Parse the initial query: filter punctuations, case-folding
-                line = process(line.rstrip("\n"))
+                line = line.rstrip("\n")
                 res = [] # contains all possible Postings for the result of a single line query
                 try:
-                    tokens = parse_query(line)
+                    tokens = tokenize_and_process_query(line)
                     # Obtain the K top scoring doc_ids based on cosine similarity score
                     # Note: Postings are in the top 10 scores unless truncated or fully exchausted
                     res = cosine_score(tokens)
