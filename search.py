@@ -222,12 +222,12 @@ def parse_boolean_query(query):
     parse_by_arr = query.split(AND_KEYWORD)
     stemmer = nltk.stem.porter.Stemmer()
     parse_by_arr = [stemmer.stem(word.lower()) for word in parse_by_arr]
-    if not arr:
+    if not parse_by_arr:
         return []
 
     first_term = parse_by_arr[0]
     res_posting_list = None
-    if " " in candidate:
+    if " " in first_term:
         res_posting_list = perform_phrase_query(first_term)
     else:
         res_posting_list = find_term(first_term)
