@@ -52,30 +52,29 @@ class VSM:
         """
         # Step 1: Obtain Postings for material to create VSM in Step 3
         tokens_list = []
-        set_of_words = self.get_words()
+        set_of_documents = self.get_documents()
         # Save flattened Counter results in tokens_list
-        for res in set_of_words:
-            doc_id = res[0]
-            # This is a dict of [word, [positions]]
-            positional_indexes = res[1]
+        for res in set_of_documents:
+            doc_id = res.doc_id
+            positional_indexes = res.positional_indexes
             for term, positions in positional_indexes.items():
-                tokens_list.append([term, (doc_id, positions)])
+                tokens_list.append([term, (doc_id, positions, res.title, res.court)])
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
         # Step 2: Get a list of all available doc_ids in ascending order
-        self.doc_ids = sorted(list(set([el[0] for el in set_of_words])))
+        self.doc_ids = sorted(list(set([el.doc_id for el in set_of_documents])))
 
         # Step 3: Fill up the dictionary with PostingLists of all unique terms
         # The dictionary maps the term to its PostingList
         for i in range(len(tokens_list)):
             curr = tokens_list[i]
             term = curr[0]
-            curr_tuple = curr[1] # (doc_id, term frequency)
+            curr_tuple = curr[1] # (doc_id, term frequency, title, court)
             if i == 0 or term != tokens_list[i-1][0]:
                 # new term
                 self.dictionary[term] = PostingList()
             # insert into appropriate PostingList
-            self.dictionary[term].insert(curr_tuple[0], curr_tuple[1])
+            self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], curr_tuple[3])
 
         # Step 4: Calculate doc_lengths for normalization
         self.calculate_doc_length()
@@ -83,41 +82,81 @@ class VSM:
         for _, posting_list in self.dictionary.items():
             posting_list.generate_skip_list()
 
-    def get_words(self):
-        """
-        Obtains a list of tuples (doc_id, Counter(all of doc_id's {term: term frequency} entries))
-        to construct the VSM, constructed from all the files in the directory
-        Returns all possible processed terms in a list of (doc_id, Counter)
-        Punctuation handling, case-folding, tokenisation, and stemming are applied
-        """
+    # Read the file in and split by the characters '",'
+    # Processes the data set into an array of cases/documents
+    # Note: This function DOES NOT filter punctuation and the sort
+    def process_file(self):
+        with open(self.in_dir) as f:
+            # Discard the first line from the corpus
+            f.readline()
+            dataset = f.read().lower()
+            sections = dataset.split('",')
+            sections_length, index = len(sections), 0
+            documents = []
+            while index < sections_length:
+                # Check here to ensure that the splitting is correct
+                if not sections[index].isdigit():
+                    print("Something went wrong with the splitting. doc id is not digit")
+
+                document = {}
+                document_details = sections[index:index + 5]
+                document.doc_id = int(document_details[0])
+                document.title = document_details[1]
+                document.content = document_details[2]
+                document.date_posted = document_details[3]
+                document.court = document_details[4]
+                documents.append(document)
+                document = {}
+                index += 5
+            return documents
+
+    def get_documents(self):
         # Result container for collating all possible dictionary file terms
-        set_of_words = []
+        set_of_documents = []
+        documents = self.process_file()
 
-        for filename in os.listdir(self.in_dir):
+        # Then we handle the content
+        # For zones, we adopt a broad zoning procedure, with Judgment and non Judgment being the only zone
+        for document in documents:
+            sentences = nltk.sent_tokenize(document.content)
+            words_array = [nltk.word_tokenize(s) for s in sentences]
+            words = [w for arr in words_array for w in arr]
+            processed_words = self.process_words(words)
+            # This is a dictionary of word and the positions it appears in
+            positional_indexes = self.generate_positional_indexes(processed_words, 0)
+            document.positional_indexes = positional_indexes
+            set_of_documents.append(document)
 
-            # Container for all words within a single file
-            words = []
+            # Lower case judgement here because process_file() already lowercased everything
+            # zones = document.content.split("judgment:")
+            # non_judgment_zone, judgment_zone = zones[0], zones[1]
 
-            with open(f"{self.in_dir}/{filename}") as f:
-                # Here, we assume that it is okay to load everything into memory
-                # Step 1: Read in entire file, filtering out relevant punctuations
-                # and replaces hyphens with spaces
-                words = filter_punctuations(f.read()).lower()
-                # Step 2: Obtaining terms and tokenising the content of the file
-                sentences = nltk.sent_tokenize(words)
-                words_array = [nltk.word_tokenize(s) for s in sentences]
-                words = [w for arr in words_array for w in arr]
-                processed_words = self.process_words(words) # may contain duplicate terms
-                # Step 3: Accumulate all tuples of (doc_id, Counter(all of doc_id's {term: term frequency} entries))
-                positional_indexes = self.generate_positional_indexes(processed_words)
-                set_of_words.append((int(filename), positional_indexes))
+            # # Do for non judgment zone first
+            # # Consider abstracting out into a new function of we have more zones
+            # non_judgement_sentences = nltk.sent_tokenize(non_judgment_zone)
+            # non_judgement_words_array = [nltk.word_tokenize(s) for s in non_judgement_sentences]
+            # non_judgement_words = [w for arr in non_judgement_words_array for w in arr]
+            # non_judgement_processed_words = self.process_words(non_judgement_words)
+            # # This is a dictionary of word and the positions it appears in
+            # non_judgement_positional_indexes = self.generate_positional_indexes(non_judgement_processed_words, 0)
+            # non_judgement_length = len(non_judgement_processed_words)
 
-        return set_of_words
+            # judgement_sentences = nltk.sent_tokenize(judgment_zone)
+            # judgement_words_array = [nltk.word_tokenize(s) for s in judgement_sentences]
+            # judgement_words = [w for arr in judgement_words_array for w in arr]
+            # judgement_processed_words = self.process_words(judgement_words)
+            # # This is a dictionary of word and the positions it appears in
+            # judgement_positional_indexes = self.generate_positional_indexes(judgement_processed_words, non_judgement_length)
+
+            # document.non_judgement_indexes = non_judgement_positional_indexes
+            # document.judgment_indexes = judgement_positional_indexes
+
+        return set_of_documents
 
     # This function aims to generate the positional indexes for the phrasal queries
-    def generate_positional_indexes(self, words):
+    def generate_positional_indexes(self, words, start_index):
         positions = defaultdict(list)
-        for i in range(len(words)):
+        for i in range(start_index, len(words)):
             word = words[i]
             positions[word].append(i)
         return positions
@@ -170,13 +209,15 @@ class Posting:
     Each Posting has a document id doc_id, term frequency freq,
     and weight which is its lnc calculation before normalisation
     """
-    def __init__(self, index, doc_id, positions):
+    def __init__(self, index, doc_id, positions, title, court):
         self.index = index # 0 indexed
         self.doc_id = doc_id
         self.freq = len(positions) # term frequency of the term in that document
         self.weight = 1 + math.log(len(positions), 10) # lnc calculation before normalisation (done during search)
         self.positions = positions
         self.pointer = None
+        self.title = title
+        self.court = court
 
 class PostingList:
     """
@@ -190,11 +231,11 @@ class PostingList:
     def get_size(self):
         return self.size
 
-    def insert(self, doc_id, positions):
+    def insert(self, doc_id, positions, title, court):
         # Creates a new Posting and places it at the next available location,
         # leaving no spaces (compact)
         next_id = self.size
-        self.postings.append(Posting(next_id, doc_id, positions))
+        self.postings.append(Posting(next_id, doc_id, positions, title, court))
         self.size += 1
 
     def insert_posting(self, posting):
