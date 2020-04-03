@@ -55,10 +55,10 @@ class VSM:
         set_of_documents = self.get_documents()
         # Save flattened Counter results in tokens_list
         for res in set_of_documents:
-            doc_id = res.doc_id
-            positional_indexes = res.positional_indexes
+            doc_id = res['doc_id']
+            positional_indexes = res['positional_indexes']
             for term, positions in positional_indexes.items():
-                tokens_list.append([term, (doc_id, positions, res.title, res.court)])
+                tokens_list.append([term, (doc_id, positions, res['title'], res['court'])])
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
         # Step 2: Get a list of all available doc_ids in ascending order
@@ -100,13 +100,12 @@ class VSM:
 
                 document = {}
                 document_details = sections[index:index + 5]
-                document.doc_id = int(document_details[0])
-                document.title = document_details[1]
-                document.content = document_details[2]
-                document.date_posted = document_details[3]
-                document.court = document_details[4]
+                document['doc_id'] = int(document_details[0].strip('"'))
+                document['title'] = document_details[1].strip('"')
+                document['content'] = document_details[2].strip('"')
+                document['title'] = document_details[3].strip('"')
+                document['court'] = document_details[4].strip('"')
                 documents.append(document)
-                document = {}
                 index += 5
             return documents
 
@@ -118,7 +117,7 @@ class VSM:
         # Then we handle the content
         # For zones, we adopt a broad zoning procedure, with Judgment and non Judgment being the only zone
         for document in documents:
-            sentences = nltk.sent_tokenize(document.content)
+            sentences = nltk.sent_tokenize(document['content'])
             words_array = [nltk.word_tokenize(s) for s in sentences]
             words = [w for arr in words_array for w in arr]
             processed_words = self.process_words(words)
