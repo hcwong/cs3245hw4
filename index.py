@@ -6,6 +6,7 @@ import math
 import os
 import nltk
 import pickle
+import csv
 import functools
 from collections import Counter, defaultdict
 
@@ -84,29 +85,28 @@ class VSM:
 
     # Read the file in and split by the characters '",'
     # Processes the data set into an array of cases/documents
-    # Note: This function DOES NOT filter punctuation and the sort
+    # Note: This function DOES NOT filter punctuation and lower case
     def process_file(self):
-        with open(self.in_dir) as f:
-            # Discard the first line from the corpus
-            f.readline()
-            dataset = f.read().lower()
-            sections = dataset.split('",')
-            sections_length, index = len(sections), 0
-            documents = []
-            while index < sections_length:
-                # Check here to ensure that the splitting is correct
-                if not sections[index].isdigit():
-                    print("Something went wrong with the splitting. doc id is not digit")
+        # need utf 8 if not will have encode error
+        with open(self.in_dir, encoding='utf-8') as f:
+            # prevent csv field larger than field limit error
+            csv.field_size_limit(sys.maxsize)
 
-                document = {}
-                document_details = sections[index:index + 5]
-                document['doc_id'] = int(document_details[0].strip('"'))
-                document['title'] = document_details[1].strip('"')
-                document['content'] = document_details[2].strip('"')
-                document['title'] = document_details[3].strip('"')
-                document['court'] = document_details[4].strip('"')
-                documents.append(document)
-                index += 5
+            csv_reader = csv.reader(f, delimiter=',')
+            documents = []
+            index = 0
+            for row in csv_reader:
+                # Ignore the first row because it is the title
+                if index != 0:
+                  document = {}
+                  # Renaming columns here so we cant use csv.DictReader
+                  document['doc_id'] = int(row[0].strip(''))
+                  document['title'] = row[1].strip('')
+                  document['content'] = row[2].strip('')
+                  document['title'] = row[3].strip('')
+                  document['court'] = row[4].strip('')
+                  documents.append(document)
+                index += 1
             return documents
 
     def get_documents(self):
@@ -123,7 +123,7 @@ class VSM:
             processed_words = self.process_words(words)
             # This is a dictionary of word and the positions it appears in
             positional_indexes = self.generate_positional_indexes(processed_words, 0)
-            document.positional_indexes = positional_indexes
+            document['positional_indexes'] = positional_indexes
             set_of_documents.append(document)
 
             # Lower case judgement here because process_file() already lowercased everything
@@ -162,11 +162,11 @@ class VSM:
 
     def process_words(self, words):
         """
-        Stems the already lowercase version of the word given
+        Stems the already lowercase version of the word given and lowercases
         Takes in the list of Strings and returns their stemmed version in a list
         """
         stemmer = nltk.stem.porter.PorterStemmer()
-        return [stemmer.stem(w) for w in words]
+        return [stemmer.stem(w.lower()) for w in words]
 
     def calculate_doc_length(self):
         """
