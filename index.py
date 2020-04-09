@@ -98,7 +98,7 @@ class VSM:
             # Container for all words within a single file
             words = []
 
-            with open(f"{self.in_dir}/{filename}") as f:
+            with open(f"{self.in_dir}/{filename}", encoding="utf8") as f:
                 # Here, we assume that it is okay to load everything into memory
                 # Step 1: Read in entire file, filtering out relevant punctuations
                 # and replaces hyphens with spaces
