@@ -63,7 +63,9 @@ class VSM:
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
         # Step 2: Get a list of all available doc_ids in ascending order
-        self.doc_ids = sorted(list(set([el.doc_id for el in set_of_documents])))
+        self.doc_ids = sorted(list(set([el['doc_id'] for el in set_of_documents])))
+
+        print("Generating posting lists")
 
         # Step 3: Fill up the dictionary with PostingLists of all unique terms
         # The dictionary maps the term to its PostingList
@@ -77,6 +79,8 @@ class VSM:
             # insert into appropriate PostingList
             self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], curr_tuple[3])
 
+        print("Calculating document vector length")
+
         # Step 4: Calculate doc_lengths for normalization
         self.calculate_doc_length()
 
@@ -87,7 +91,6 @@ class VSM:
     # Processes the data set into an array of cases/documents
     # Note: This function DOES NOT filter punctuation and lower case
     def process_file(self):
-        # need utf 8 if not will have encode error
         with open(self.in_dir, encoding='utf-8') as f:
             # prevent csv field larger than field limit error
             csv.field_size_limit(sys.maxsize)
@@ -96,7 +99,6 @@ class VSM:
             documents = []
             index = 0
             for row in csv_reader:
-                # Ignore the first row because it is the title
                 if index != 0:
                   document = {}
                   # Renaming columns here so we cant use csv.DictReader
@@ -113,9 +115,11 @@ class VSM:
         # Result container for collating all possible dictionary file terms
         set_of_documents = []
         documents = self.process_file()
+        print("Done processing file")
 
         # Then we handle the content
         # For zones, we adopt a broad zoning procedure, with Judgment and non Judgment being the only zone
+        count = 0
         for document in documents:
             sentences = nltk.sent_tokenize(document['content'])
             words_array = [nltk.word_tokenize(s) for s in sentences]
@@ -125,6 +129,8 @@ class VSM:
             positional_indexes = self.generate_positional_indexes(processed_words, 0)
             document['positional_indexes'] = positional_indexes
             set_of_documents.append(document)
+            print(count," Generated poisitional index")
+            count += 1
 
             # Lower case judgement here because process_file() already lowercased everything
             # zones = document.content.split("judgment:")
@@ -149,6 +155,7 @@ class VSM:
 
             # document.non_judgement_indexes = non_judgement_positional_indexes
             # document.judgment_indexes = judgement_positional_indexes
+        print("Done getting documents")
 
         return set_of_documents
 
