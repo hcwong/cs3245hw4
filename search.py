@@ -9,6 +9,7 @@ import heapq
 import functools
 from collections import Counter
 from index import Posting, PostingList
+from encode import decode
 
 # Initialise Global variables
 
@@ -134,7 +135,7 @@ def find_term(term):
     if term not in D:
         return []
     POSTINGS_FILE_POINTER.seek(D[term])
-    return pickle.load(POSTINGS_FILE_POINTER).postings
+    return decode(pickle.load(POSTINGS_FILE_POINTER).postings)
 
 # Takes in a phrasal query in the form of an array of terms and returns the doc ids which have the phrase
 # Note: Only use this for boolean retrieval, not free text mode
@@ -157,18 +158,34 @@ def merge_positions(positions1, positions2):
     merged_positions = []
     L1 = len(positions1)
     L2 = len(positions2)
-    curr1, curr2 = 0, 0
-    while curr1 < L1 and curr2 < L2:
-        if positions1[curr1] + 1 == positions2[curr2]:
-            # Only merge the position of curr2 because
+    index1, index2 = 0, 0
+    # This is for our gap encoding
+    last_position_of_merged_list = 0
+    # Do this because we have byte encoding
+    get_proper_position = lambda curr_value, offset: curr_value + offset
+    offset1, offset2 = positions1[0], positions2[0]
+    while index1 < L1 and index2 < L2:
+        proper_position2 = get_proper_position(positions2[index2], offset2)
+        if get_proper_position(positions1[index1], offset1) + 1 == proper_position2:
+            # Only merge the position of index2 because
             # We only need the position of the preceeding term
-            merged_positions.append(positions2[curr2])
-            curr1 += 1
-            curr2 += 1
-        elif positions1[curr1] + 1 > positions2[curr2]:
-            curr2 += 1
+
+            # Need to do some math now because of our gap encoding, sadly
+            position_to_append = proper_position2 - last_position_of_merged_list
+            last_position_of_merged_list = proper_position2
+            merged_positions.append(position_to_append)
+
+            # Update the offsets of the original two positing lists
+            offset1 += positions1[index1]
+            offset2 += positions2[index2]
+            index1 += 1
+            index2 += 1
+        elif get_proper_position(positions1[index1], offset1) + 1 > proper_position2:
+            offset2 += positions2[index2]
+            index2 += 1
         else:
-            curr1 += 1
+            offset1 += positions1[index1]
+            index1 += 1
     return merged_positions
 
 # Performs merging of two postings
@@ -192,7 +209,7 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 merged_positions = merge_positions(posting1.positions, posting2.positions)
                 # Only add the doc_id if the positions are not empty
                 if len(merged_positions > 0):
-                    merged_list.insert(posting1.doc_id, merged_positions)
+                    merged_list.insert_without_encoding(posting1.doc_id, merged_positions)
             else:
                 merged_list.insert_posting(posting1)
         else:

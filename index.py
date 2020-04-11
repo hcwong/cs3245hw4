@@ -9,6 +9,7 @@ import pickle
 import csv
 import functools
 from collections import Counter, defaultdict
+from encode import encode
 
 # Self-defined constants, functions and classes
 
@@ -59,7 +60,7 @@ class VSM:
             doc_id = res['doc_id']
             positional_indexes = res['positional_indexes']
             for term, positions in positional_indexes.items():
-                tokens_list.append([term, (doc_id, positions, res['title'], res['court'])])
+                tokens_list.append([term, (doc_id, positions)])
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
         # Step 2: Get a list of all available doc_ids in ascending order
@@ -77,7 +78,7 @@ class VSM:
                 # new term
                 self.dictionary[term] = PostingList()
             # insert into appropriate PostingList
-            self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], curr_tuple[3])
+            self.dictionary[term].insert(curr_tuple[0], curr_tuple[1])
 
         print("Calculating document vector length")
 
@@ -109,7 +110,7 @@ class VSM:
                   document['court'] = row[4].strip('')
                   documents.append(document)
                 index += 1
-                # TODO: Delete
+                # # TODO: Delete
                 # if index == 600:
                   # break
             return documents
@@ -135,29 +136,6 @@ class VSM:
             print(count," Generated poisitional index")
             count += 1
 
-            # Lower case judgement here because process_file() already lowercased everything
-            # zones = document.content.split("judgment:")
-            # non_judgment_zone, judgment_zone = zones[0], zones[1]
-
-            # # Do for non judgment zone first
-            # # Consider abstracting out into a new function of we have more zones
-            # non_judgement_sentences = nltk.sent_tokenize(non_judgment_zone)
-            # non_judgement_words_array = [nltk.word_tokenize(s) for s in non_judgement_sentences]
-            # non_judgement_words = [w for arr in non_judgement_words_array for w in arr]
-            # non_judgement_processed_words = self.process_words(non_judgement_words)
-            # # This is a dictionary of word and the positions it appears in
-            # non_judgement_positional_indexes = self.generate_positional_indexes(non_judgement_processed_words, 0)
-            # non_judgement_length = len(non_judgement_processed_words)
-
-            # judgement_sentences = nltk.sent_tokenize(judgment_zone)
-            # judgement_words_array = [nltk.word_tokenize(s) for s in judgement_sentences]
-            # judgement_words = [w for arr in judgement_words_array for w in arr]
-            # judgement_processed_words = self.process_words(judgement_words)
-            # # This is a dictionary of word and the positions it appears in
-            # judgement_positional_indexes = self.generate_positional_indexes(judgement_processed_words, non_judgement_length)
-
-            # document.non_judgement_indexes = non_judgement_positional_indexes
-            # document.judgment_indexes = judgement_positional_indexes
         print("Done getting documents")
 
         return set_of_documents
@@ -168,6 +146,7 @@ class VSM:
         last_position = {}
         for i in range(start_index, len(words)):
             word = words[i]
+            # Store gap encoding
             if word not in last_position:
               last_position[word] = i
               positions[word].append(i)
@@ -214,7 +193,6 @@ class VSM:
             for word, posting_list in self.dictionary.items():
                 cursor = f.tell()
                 d[word] = cursor # updating respective (term to file cursor value) mappings
-                # pickle.dump([posting.to_dict() for posting in posting_list.postings], f, protocol=4)
                 pickle.dump(posting_list, f, protocol=4)
 
         with open(self.d_file, "wb") as f:
@@ -226,15 +204,13 @@ class Posting:
     Each Posting has a document id doc_id, term frequency freq,
     and weight which is its lnc calculation before normalisation
     """
-    def __init__(self, index, doc_id, positions, title, court):
-        # self.index = index # 0 indexed
+    def __init__(self, index, doc_id, positions):
         self.doc_id = doc_id
-        # self.freq = len(positions) # term frequency of the term in that document
-        # self.weight = 1 + math.log(len(positions), 10) # lnc calculation before normalisation (done during search)
         self.positions = positions
         self.pointer = None
-        # self.title = title
-        # self.court = court
+
+    def var_byte_encoding(self):
+        self.positions = encode(self.positions)
 
 class PostingList:
     """
@@ -244,19 +220,22 @@ class PostingList:
     def __init__(self):
         self.postings = []
         self.size = 0
-        self.last = 0
 
     def get_size(self):
         return self.size
 
-    def insert(self, doc_id, positions, title, court):
+    # Insert with var byte encoding
+    def insert(self, doc_id, positions):
         next_id = self.size
-        if next_id == 0:
-          self.postings.append(Posting(next_id, doc_id, positions, title, court))
-        else:
-          self.postings.append(Posting(next_id, doc_id - self.last, positions, title, court))
+        new_posting = Posting(next_id, doc_id, positions)
+        new_posting.var_byte_encoding()
+        self.postings.append(new_posting)
         self.size += 1
-        self.last = doc_id
+
+    def insert_without_encoding(self, doc_id, positions):
+        next_id = self.size
+        self.postings.append(Posting(next_id, doc_id, positions))
+        self.size += 1
 
     def insert_posting(self, posting):
         self.postings.append(posting)
