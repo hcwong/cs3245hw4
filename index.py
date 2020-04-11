@@ -109,6 +109,9 @@ class VSM:
                   document['court'] = row[4].strip('')
                   documents.append(document)
                 index += 1
+                # TODO: Delete
+                # if index == 600:
+                  # break
             return documents
 
     def get_documents(self):
@@ -162,9 +165,15 @@ class VSM:
     # This function aims to generate the positional indexes for the phrasal queries
     def generate_positional_indexes(self, words, start_index):
         positions = defaultdict(list)
+        last_position = {}
         for i in range(start_index, len(words)):
             word = words[i]
-            positions[word].append(i)
+            if word not in last_position:
+              last_position[word] = i
+              positions[word].append(i)
+            else:
+              positions[word].append(i - last_position[word])
+              last_position[word] = i
         return positions
 
     def process_words(self, words):
@@ -186,9 +195,10 @@ class VSM:
         for _, posting_list in self.dictionary.items():
             for posting in posting_list.postings:
                 if posting.doc_id not in self.doc_lengths:
-                    self.doc_lengths[posting.doc_id] = posting.weight * posting.weight
+                    posting_weight = 1 + math.log(len(posting.positions), 10)
+                    self.doc_lengths[posting.doc_id] = posting_weight * posting_weight
                 else:
-                    self.doc_lengths[posting.doc_id] += (posting.weight * posting.weight)
+                    self.doc_lengths[posting.doc_id] += (posting_weight * posting_weight)
         for doc_id, total_weight in self.doc_lengths.items():
             self.doc_lengths[doc_id] = math.sqrt(total_weight)
 
@@ -200,11 +210,12 @@ class VSM:
         """
         d = {} # to contain mappings of term to file cursor value
         with open(self.p_file, "wb") as f:
-            pickle.dump(self.doc_ids, f)
+            # pickle.dump(self.doc_ids, f)
             for word, posting_list in self.dictionary.items():
                 cursor = f.tell()
                 d[word] = cursor # updating respective (term to file cursor value) mappings
-                pickle.dump(posting_list, f)
+                # pickle.dump([posting.to_dict() for posting in posting_list.postings], f, protocol=4)
+                pickle.dump(posting_list, f, protocol=4)
 
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
@@ -216,14 +227,14 @@ class Posting:
     and weight which is its lnc calculation before normalisation
     """
     def __init__(self, index, doc_id, positions, title, court):
-        self.index = index # 0 indexed
+        # self.index = index # 0 indexed
         self.doc_id = doc_id
-        self.freq = len(positions) # term frequency of the term in that document
-        self.weight = 1 + math.log(len(positions), 10) # lnc calculation before normalisation (done during search)
+        # self.freq = len(positions) # term frequency of the term in that document
+        # self.weight = 1 + math.log(len(positions), 10) # lnc calculation before normalisation (done during search)
         self.positions = positions
         self.pointer = None
-        self.title = title
-        self.court = court
+        # self.title = title
+        # self.court = court
 
 class PostingList:
     """
@@ -233,16 +244,19 @@ class PostingList:
     def __init__(self):
         self.postings = []
         self.size = 0
+        self.last = 0
 
     def get_size(self):
         return self.size
 
     def insert(self, doc_id, positions, title, court):
-        # Creates a new Posting and places it at the next available location,
-        # leaving no spaces (compact)
         next_id = self.size
-        self.postings.append(Posting(next_id, doc_id, positions, title, court))
+        if next_id == 0:
+          self.postings.append(Posting(next_id, doc_id, positions, title, court))
+        else:
+          self.postings.append(Posting(next_id, doc_id - self.last, positions, title, court))
         self.size += 1
+        self.last = doc_id
 
     def insert_posting(self, posting):
         self.postings.append(posting)
@@ -255,9 +269,6 @@ class PostingList:
         # -1 to prevent reading from invalid index
         for i in range(self.get_size() - skip_distance - 1):
             self.postings[i].pointer = self.postings[i + skip_distance]
-
-# Below are the code provided in the original Homework index.py file,
-# with edits to build_index to use our implementation
 
 def usage():
     print("usage: " + sys.argv[0] + " -i directory-of-documents -d dictionary-file -p postings-file")
