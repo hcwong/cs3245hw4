@@ -60,7 +60,6 @@ class VSM:
 
         # Save flattened Counter results in tokens_list
         for res in set_of_documents:
-            # Part 1. Process doc_id into a set
             doc_id = res['doc_id']
             """
             if doc_id.isdigit():
@@ -70,6 +69,7 @@ class VSM:
                     print("Error: doc_id " + str(doc_id) + " is repeated")
             else:
                 print("Error: doc_id " + str(doc_id) + " is not digits")
+            """
             """
             # Part 2. Process content into tokens of positional indexes (subsequently form into posting list)
             content_positional_indexes = res['content_positional_indexes']
@@ -85,11 +85,17 @@ class VSM:
             court_positional_indexes = res['court_positional_indexes']
             for term, positions in court_positional_indexes.items():
                 tokens_list.append([term, (doc_id, Field.COURT, positions)])  # [term, (doc_ID, Field, position]  
+            """
+            # Generate tokens of positional indexes (subsequently form into posting list)
+            tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, res['content_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, res['title_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, res['court_positional_indexes']))
 
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
         # Step 2: Get a list of all available doc_ids in ascending order
-        self.docid_set = sorted(list(set([el['doc_id'] for el in set_of_documents])))
+        #self.docid_set = sorted(list(set([el['doc_id'] for el in set_of_documents])))
+        self.docid_set = set([el['doc_id'] for el in set_of_documents])  # Process doc_id into a set
 
         print("Generating posting lists")
 
@@ -121,9 +127,9 @@ class VSM:
             """# prevent csv field larger than field limit error
             csv.field_size_limit(sys.maxsize)
             """
+            # # TODO: Delete?
             # To run csv.field_size_limit(sys.maxsize) LOCALLY
             # by resolving "OverflowError: Python int too large to convert to C long" caused by:
-            # TO BE DELETED LTR
             maxInt = sys.maxsize
             while True:
                 # decrease the maxInt value by factor 10
@@ -178,10 +184,19 @@ class VSM:
 
         return set_of_documents
 
+    def generate_token_list(self, doc_id, field_type, positional_indexes):
+        """
+        Generates token from a list of positional index
+        """
+        tokens_list = []
+        for term, positions in positional_indexes.items():
+            tokens_list.append([term, (doc_id, field_type, positions)])  # [term, (doc_ID, Field, position]
+        return tokens_list
+
     def generate_positional_indexes(self, paragraph):
         """
-        Generates positional index from a paragraph/string
-        by using the function generate_list_of_words() and generate_positional_indexes_from_list()
+        #Generates positional index from a paragraph/string
+        #by using the function generate_list_of_words() and generate_positional_indexes_from_list()
         """
         processed_words = self.generate_list_of_words(paragraph)
         # This is a dictionary of word and the positions it appears in
@@ -248,7 +263,7 @@ class VSM:
         Document lengths are also written into dictionary file
         All doc_ids are also written into postings file
         """
-        out_intermediate = open("intermediate.txt", "w")  # For debuging purpose
+        out_intermediate = open("intermediate.txt", "w")  # For debuging purpose, TO DELETE
 
         d = {} # to contain mappings of term to file cursor value
         with open(self.p_file, "wb") as f:
@@ -258,14 +273,18 @@ class VSM:
                 d[word] = cursor # updating respective (term to file cursor value) mappings
                 pickle.dump(posting_list, f, protocol=4)
                 out_intermediate.write(
-                    "Word: " + str(word) + " Posting: " + posting_list.generate_string_of_postinglist() + '\n\n')  # For debuging purpose
+                    "Word: " + str(word) + " Posting: " + posting_list.generate_string_of_postinglist()
+                    + '\n\n')  # For debuging purpose, TO DELETE
 
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
             pickle.dump(self.doc_lengths, f)
-            out_intermediate.write("dictionary: " + str(f) + '\n\n')  # For debuging purpose
+            pickle.dump(self.docid_set, f)
 
-        out_intermediate.close()  # For debuging purpose
+            out_intermediate.write("dictionary: " + str(d) + '\n\n')  # For debuging purpose, TO DELETE
+            out_intermediate.write("docid_set: " + str(self.docid_set) + '\n\n')  # For debuging purpose, TO DELETE
+
+        out_intermediate.close()  # For debuging purpose, TO DELETE
 
 class Field(IntEnum):
     CONTENT = 1
