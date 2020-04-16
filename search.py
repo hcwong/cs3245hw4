@@ -10,7 +10,8 @@ import functools
 from collections import Counter
 from index import Posting, PostingList
 from encode import decode
-
+from nltk.corpus import wordnet
+from nltk.corpus import stopwords
 # Initialise Global variables
 
 D = {} # to store all (term to posting file cursor value) mappings
@@ -259,11 +260,35 @@ def parse_boolean_query(query):
     return res_posting_list
 
 def parse_free_text_query(query):
+    #Expected to add query expansion, after process(query) is done
+    #query = query_expansion(process(query))
     tokens = tokenize_and_process_query(process(query))
     res = cosine_score(tokens)
     return res
 
+def query_expansion(query):
+    #Split the query into words
+    #Remove stop words
+    #Find the synonyms of each word and append them to a set, since some of the synonyms might be repetitive
+    #Add the set of synonyms to list of extended query words
+    #Convert the extended query list to extende query string
+    #Return the string
 
+    query_words = query.split()
+    stop_words = set(stopwords.words('english'))
+    query_words = [word for word in query_words if not word in stop_words]
+    expanded_query = []
+    for word in query_words:
+        expanded_query.append(word)
+        syn_set = set()
+        for s in wordnet.synsets(word):
+            for l in s.lemmas():
+                syn_set.add(l.name())
+        expanded_query.extend(syn_set)
+
+    new_query = ' '.join([str(word) for word in expanded_query])
+
+    return new_query
 # Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
 
 def usage():
