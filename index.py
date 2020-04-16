@@ -27,14 +27,25 @@ def filter_punctuations(s):
 
 def comparator(arr1, arr2):
     """
-    Sorts the 2 lists by term first, then doc_id in ascending order
+    Sorts the 2 lists by term first, then doc_id in ascending order, then field (title -> court -> content)
     """
-    if arr1[0] > arr2[0]:
+    if arr1[0] > arr2[0]:  # term
         return 1
     elif arr2[0] > arr1[0]:
         return -1
-    else:
+    elif arr1[1][0] != arr2[1][0]:  # doc_id
         return arr1[1][0] - arr2[1][0]
+    elif arr1[1][1] != arr2[1][1]:  # Field title -> court -> content
+        if arr2[1][1] == Field.TITLE:
+            return 1
+        elif arr1[1][1] == Field.TITLE:
+            return -1
+        elif arr2[1][1] == Field.COURT:
+            return 1
+        elif arr1[1][1] == Field.COURT:
+            return -1
+    else:
+        return 0
 
 class VSM:
     """
@@ -221,8 +232,8 @@ class VSM:
         # then, complete calculation for the vector's length
         for _, posting_list in self.dictionary.items():
             for posting in posting_list.postings:
+                posting_weight = 1 + math.log(len(posting.positions), 10)
                 if posting.doc_id not in self.doc_lengths:
-                    posting_weight = 1 + math.log(len(posting.positions), 10) # SHOULD BE IN FRONT??
                     self.doc_lengths[posting.doc_id] = posting_weight * posting_weight
                 else:
                     self.doc_lengths[posting.doc_id] += (posting_weight * posting_weight)
@@ -237,7 +248,7 @@ class VSM:
         """
         #out_intermediate = open("intermediate.txt", "w", encoding='utf8')  # For debuging purpose, TO DELETE
 
-        d = {} # to contain mappings of term to file cursor value
+        d = {}  # to contain mappings of term to file cursor value
         with open(self.p_file, "wb") as f:
             # pickle.dump(self.doc_ids, f)
             for word, posting_list in self.dictionary.items():
