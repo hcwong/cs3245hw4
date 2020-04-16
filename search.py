@@ -286,7 +286,7 @@ def query_expansion(query):
                 syn_set.add(l.name())
         expanded_query.extend(syn_set)
 
-    new_query = ' '.join([str(word) for word in expanded_query])
+    new_query = ' '.join([str(word) for word.lower() in expanded_query])
 
     return new_query
 # Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
