@@ -352,6 +352,7 @@ def parse_boolean_query(terms):
     return get_ranking_for_boolean_query(res_posting_list)
 
 def parse_free_text_query(terms):
+    # TODO: See below (delete once done)
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
     res = cosine_score(terms)
