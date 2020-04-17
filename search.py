@@ -88,21 +88,27 @@ def cosine_score(tokens_arr):
         # We will calculate its weight in Step 3
         # This is nicely reflected in the term's PostingList
         # Only documents with Postings of this term will have non-zero score contributions
-        posting_list = find_term(term)
+        posting_list = []
+        if term.contains(" "):
+            posting_list_object = perform_phrase_query(term)
+            if posting_list_object is not None:
+                posting_list = posting_list_object.postings
+        else:
+            posting_list = find_term(term)
         # Invalid query terms have no Postings and hence no score contributions;
         # in this case we advance to the next query term saving unnecessary operations
-        if (posting_list == []):
+        if not posting_list.postings:
             continue
 
         # 2. Obtain the second vector's (query vector's) value for pointwise multiplication
         # Calculate the weight entry of the term in the query, of the term-document matrix
-        query_term_weight = get_query_weight(len(posting_list), term_frequencies[term])
+        query_term_weight = get_query_weight(posting_list.size, term_frequencies[term])
 
         # 3. Perform pointwise multiplication for the 2 vectors
         # The result represents the cosine similarity score contribution from the current term before normalisation
         # Accumulate all of these contributions to obtain the final score before normalising
         # Accumulate all of these contributions to obtain the final score before normalising
-        for posting in posting_list:
+        for posting in posting_list.postings:
             # Obtain pre-computed weight of term for each document and perform calculation
             doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in log calculation as tf >= 1
             if posting.doc_id not in scores:
@@ -150,9 +156,9 @@ def find_term(term):
     # NOTE: LOWERCASING IS ONLY DONE HERE.
     term = term.strip().lower()
     if term not in D:
-        return []
+        return None
     POSTINGS_FILE_POINTER.seek(D[term])
-    return decode(pickle.load(POSTINGS_FILE_POINTER).postings)
+    return pickle.load(POSTINGS_FILE_POINTER)
 
 def find_by_document_id(terms):
     """
@@ -173,8 +179,12 @@ def perform_phrase_query(phrase):
     if not phrase:
         return False
     phrase_posting_list = find_term(phrase[0])
+    if phrase_posting_list == None:
+        return PostingList() # Return empty posting list
     for term in phrase[1:]:
         current_term_postings = find_term(term)
+        if current_term_postings == None:
+            return PostingList()
         # Order of arguments matter
         phrase_posting_list = merge_posting_lists(phrase_posting_list, current_term_postings, True)
 
@@ -239,7 +249,7 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
             # Case 1: Both doc_id and field are the same
             if posting1.field == posting2.field:
                 if should_perform_merge_positions:
-                    merged_positions = merge_positions(posting1.positions, posting2.positions)
+                    merged_positions = merge_positions(decode(posting1.positions), decode(posting2.positions))
                     # Only add the doc_id if the positions are not empty
                     if len(merged_positions > 0):
                         merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
