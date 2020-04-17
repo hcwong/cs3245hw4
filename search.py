@@ -10,8 +10,7 @@ import functools
 from collections import Counter
 from index import Posting, PostingList
 from encode import decode
-from nltk.corpus import wordnet
-from nltk.corpus import stopwords
+
 # Initialise Global variables
 
 D = {} # to store all (term to posting file cursor value) mappings
@@ -33,31 +32,33 @@ def comparator(tup1, tup2):
         return tup2[1] - tup1[1]
 
 # Parsing
-
-def process(line):
-    """
-    Filters out some punctuations and then case-folds to lowercase
-    Takes in a String line and returns the result String
-    """
-    return filter_punctuations(line).lower()
-
 def filter_punctuations(s):
     """
     Replaces certain punctuations from Strings with space, to be removed later on
-    Takes in a String s and returns resultant String
+    Takes in String s and returns the processed version of it
     """
     punctuations = '''!?-;:"\\,./#$%^&<>[]{}*_~()'''
+    filtered_term = ""
     for character in s:
         if character in punctuations:
-            s = s.replace(character, " ")
-    return s
+            filtered_term += " "
+        else:
+            filtered_term += character
+    return filtered_term
 
-def tokenize_and_process_query(query):
+def process(arr):
     """
-    Takes in a case-folded String previously processed for punctuations, tokenises it, and returns a list of stemmed terms
+    Filters out some punctuations and then case-folds to lowercase
+    Takes in a String array and returns the result array
+    """
+    return [filter_punctuations(term) for term in arr]
+
+def stem_query(arr):
+    """
+    Takes in a case-folded array of terms previously processed for punctuations, tokenises it, and returns a list of stemmed terms
     """
     stemmer = nltk.stem.porter.PorterStemmer()
-    return [stemmer.stem(term) for term in nltk.word_tokenize(query)]
+    return [stemmer.stem(term) for term in arr]
 
 # Ranking
 
@@ -92,9 +93,10 @@ def cosine_score(tokens_arr):
         # 3. Perform pointwise multiplication for the 2 vectors
         # The result represents the cosine similarity score contribution from the current term before normalisation
         # Accumulate all of these contributions to obtain the final score before normalising
+        # Accumulate all of these contributions to obtain the final score before normalising
         for posting in posting_list:
             # Obtain pre-computed weight of term for each document and perform calculation
-            doc_term_weight = posting.weight # guaranteed no error in log calculation as tf >= 1
+            doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in log calculation as tf >= 1
             if posting.doc_id not in scores:
                 scores[posting.doc_id] = (doc_term_weight * query_term_weight)
             else:
@@ -132,7 +134,8 @@ def find_term(term):
     Takes in a term, then finds and returns the list representation of the PostingList of the given term
     or an empty list if no such term exists in index
     """
-    term = term.strip()
+    # NOTE: LOWERCASING IS ONLY DONE HERE.
+    term = term.strip().lower()
     if term not in D:
         return []
     POSTINGS_FILE_POINTER.seek(D[term])
@@ -163,11 +166,11 @@ def merge_positions(positions1, positions2):
     # This is for our gap encoding
     last_position_of_merged_list = 0
     # Do this because we have byte encoding
-    get_proper_position = lambda curr_value, offset: curr_value + offset
+    calculate_actual_pos_from_offset = lambda curr_value, offset: curr_value + offset
     offset1, offset2 = positions1[0], positions2[0]
     while index1 < L1 and index2 < L2:
-        proper_position2 = get_proper_position(positions2[index2], offset2)
-        if get_proper_position(positions1[index1], offset1) + 1 == proper_position2:
+        proper_position2 = calculate_actual_pos_from_offset(positions2[index2], offset2)
+        if calculate_actual_pos_from_offset(positions1[index1], offset1) + 1 == proper_position2:
             # Only merge the position of index2 because
             # We only need the position of the preceeding term
 
@@ -181,7 +184,7 @@ def merge_positions(positions1, positions2):
             offset2 += positions2[index2]
             index1 += 1
             index2 += 1
-        elif get_proper_position(positions1[index1], offset1) + 1 > proper_position2:
+        elif calculate_actual_pos_from_offset(positions1[index1], offset1) + 1 > proper_position2:
             offset2 += positions2[index2]
             index2 += 1
         else:
@@ -210,7 +213,7 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 merged_positions = merge_positions(posting1.positions, posting2.positions)
                 # Only add the doc_id if the positions are not empty
                 if len(merged_positions > 0):
-                    merged_list.insert_without_encoding(posting1.doc_id, merged_positions)
+                    merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
             else:
                 merged_list.insert_posting(posting1)
         else:
@@ -229,28 +232,31 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     return merged_list
 
 def parse_query(query):
-    phrasal_regex_pattern = '.*\"(.*)\".*'
-    if AND_KEYWORD in query or re.search(phrasal_regex_pattern, query):
-        return parse_boolean_query
-
+    terms_array, is_boolean_query = split_query(query)
+    terms_array = stem_query(process(terms_array))
+    if is_boolean_query:
+        return parse_boolean_query(terms_array)
     else:
-        return parse_free_text_query(query)
+        return parse_free_text_query(terms_array)
 
-def parse_boolean_query(query):
-    parse_by_arr = query.split(AND_KEYWORD)
-    stemmer = nltk.stem.porter.Stemmer()
-    parse_by_arr = [stemmer.stem(word.lower()) for word in parse_by_arr]
-    if not parse_by_arr:
-        return []
+def parse_boolean_query(terms):
+    """
+    Takes in the array of terms from the query
+    Returns the posting list of all the phrase
+    """
+    # First filter out all the AND keywords from the term array
+    filtered_terms = [term for term in terms if term != AND_KEYWORD]
 
-    first_term = parse_by_arr[0]
+    # Get the posting list of the first word
+    first_term = filtered_terms[0]
     res_posting_list = None
     if " " in first_term:
         res_posting_list = perform_phrase_query(first_term)
     else:
         res_posting_list = find_term(first_term)
 
-    for term in parse_by_arr[1:]:
+    # Do merging for the posting lists of the rest of the terms
+    for term in filtered_terms[1:]:
         term_posting_list = None
         if " " in term:
             term_posting_list = perform_phrase_query(term)
@@ -259,39 +265,46 @@ def parse_boolean_query(query):
         res_posting_list = merge_posting_lists(res_posting_list, term_posting_list)
     return res_posting_list
 
-def parse_free_text_query(query):
+def parse_free_text_query(terms):
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
-    tokens = tokenize_and_process_query(process(query))
-    res = cosine_score(tokens)
+    res = cosine_score(terms)
     return res
 
+def split_query(query):
+    """
+    split_query extracts out the terms into phrases and terms
+    Assumes that the query is well formed.
+    """
+    start_index = 0
+    is_in_phrase = False
+    is_boolean_query = False
+    current_index = 0
+    terms = []
+
+    while current_index < len(query):
+        current_char = query[current_index]
+        if current_char == "\"":
+            if is_in_phrase:
+                is_in_phrase = False
+                terms.append(query[start_index:current_index])
+                start_index = current_index + 1 # +1 to ignore the space after this
+            else:
+                start_index = current_index + 1
+                is_in_phrase = True
+                is_boolean_query = True
+        elif current_char == " ":
+            # Append the word if not parsing part of phrase
+            if not is_in_phrase:
+                terms.append(query[start_index:current_index])
+                start_index = current_index + 1
+        current_index += 1
+
+    # Weed out empty strings
+    return [term for term in terms if term], is_boolean_query
+
+
 def query_expansion(query):
-    #Split the query into words
-    #Remove stop words
-    #Find the synonyms of each word and append them to a set, since some of the synonyms might be repetitive
-    #Add the set of synonyms to list of extended query words
-    #Convert the extended query list to extende query string
-    #Return the string
-
-    query_words = query.split()
-    stop_words = set(stopwords.words('english'))
-    query_words = [word for word in query_words if not word in stop_words]
-    expanded_query = []
-    for word in query_words:
-        expanded_query.append(word)
-        syn_set = set()
-        for s in wordnet.synsets(word):
-            for l in s.lemmas():
-                syn_set.add(l.name())
-        expanded_query.extend(syn_set)
-
-    new_query = ' '.join([str(word) for word.lower() in expanded_query])
-
-    return new_query
-# Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
-
-def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q file-of-queries -o output-file-of-results")
 
 def run_search(dict_file, postings_file, queries_file, results_file):
@@ -321,15 +334,12 @@ def run_search(dict_file, postings_file, queries_file, results_file):
                 line = line.rstrip("\n")
                 res = [] # contains all possible Postings for the result of a single line query
                 try:
-                    tokens = tokenize_and_process_query(line)
-                    # Obtain the K top scoring doc_ids based on cosine similarity score
-                    # Note: Postings are in the top 10 scores unless truncated or fully exchausted
-                    res = cosine_score(tokens)
+                    res = parse_query(line)
                 except Exception as e:
                     print(repr(e), line)
                     res = [] # invalid search queries
 
-                # 3. Write the K most relevant documents for the current query to storage
+                # 3. Write the most relevant documents for the current query to storage
                 # in descending score order, then ascending doc_id
                 r_file.write(" ".join([str(r) for r in res]) + "\n")
 
