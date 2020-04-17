@@ -19,7 +19,7 @@ def filter_punctuations(s):
     Replaces certain punctuations from Strings with space, to be removed later on
     Takes in String s and returns the processed version of it
     """
-    punctuations = '''!?-;:"\\,./#$%^&<>[]{}*_~()'''
+    punctuations = '''!?-;:"\\,./#$%^&<>[]{}*`'=@+…“”’-–—_~()'''
     for character in s:
         if character in punctuations:
             s = s.replace(character, " ")
@@ -27,7 +27,7 @@ def filter_punctuations(s):
 
 def comparator(arr1, arr2):
     """
-    Sorts the 2 lists by term first, then doc_id in ascending order, then field (title -> court -> content)
+    Sorts the 2 lists by term first, then doc_id in ascending order, then field (title -> court -> date_posted-> content)
     """
     if arr1[0] > arr2[0]:  # term
         return 1
@@ -43,6 +43,10 @@ def comparator(arr1, arr2):
         elif arr2[1][1] == Field.COURT:
             return 1
         elif arr1[1][1] == Field.COURT:
+            return -1
+        elif arr2[1][1] == Field.DATE_POSTED:
+            return 1
+        elif arr1[1][1] == Field.DATE_POSTED:
             return -1
     else:
         return 0
@@ -76,6 +80,7 @@ class VSM:
             tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, res['content_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, res['title_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, res['court_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, res['date_posted_positional_indexes']))
 
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
@@ -132,18 +137,18 @@ class VSM:
             index = 0
             for row in csv_reader:
                 if index != 0:
-                  document = {}
-                  # Renaming columns here so we cant use csv.DictReader
-                  document['doc_id'] = int(row[0].strip(''))
-                  document['title'] = row[1].strip('')
-                  document['content'] = row[2].strip('')
-                  document['date_posted'] = row[3].strip('')
-                  document['court'] = row[4].strip('')
-                  documents.append(document)
+                    document = {}
+                    # Renaming columns here so we cant use csv.DictReader
+                    document['doc_id'] = int(row[0].strip(''))
+                    document['title'] = row[1].strip('')
+                    document['content'] = row[2].strip('')
+                    document['date_posted'] = row[3].strip('')
+                    document['court'] = row[4].strip('')
+                    documents.append(document)
                 index += 1
                 # # TODO: Delete
                 #if index == 60:
-                  #break
+                #  break
             return documents
 
     def get_documents(self):
@@ -159,12 +164,12 @@ class VSM:
             document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
             document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
             document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
+            document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
             set_of_documents.append(document)
             print(count," Generated positional indexes")
             count += 1
 
         print("Done getting documents")
-
         return set_of_documents
 
     def generate_token_list(self, doc_id, field_type, positional_indexes):
@@ -191,7 +196,7 @@ class VSM:
         Generates a list of processed words from the string it was input with
         """
         sentences = nltk.sent_tokenize(paragraph)
-        words_array = [nltk.word_tokenize(s) for s in sentences]
+        words_array = [nltk.word_tokenize(filter_punctuations(s)) for s in sentences]
         words = [w for arr in words_array for w in arr]
         processed_words = self.process_words(words)
         return processed_words
@@ -265,13 +270,13 @@ class VSM:
 
             #out_intermediate.write("dictionary: " + str(d) + '\n\n')  # For debuging purpose, TO DELETE
             #out_intermediate.write("docid_set: " + str(self.docid_set) + '\n\n')  # For debuging purpose, TO DELETE
-
         #out_intermediate.close()  # For debuging purpose, TO DELETE
 
 class Field(IntEnum):
     CONTENT = 1
     TITLE = 2
     COURT = 3
+    DATE_POSTED = 4
 
 class Posting:
     """
