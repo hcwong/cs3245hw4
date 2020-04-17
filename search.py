@@ -8,7 +8,7 @@ import math
 import heapq
 import functools
 from collections import Counter
-from index import Posting, PostingList
+from index import Posting, PostingList, Field
 from encode import decode
 
 # Initialise Global variables
@@ -17,7 +17,6 @@ D = {} # to store all (term to posting file cursor value) mappings
 POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
-K = 10 # Number of search results to display to the user
 AND_KEYWORD = "AND"
 
 def comparator(tup1, tup2):
@@ -62,9 +61,18 @@ def stem_query(arr):
 
 # Ranking
 
+def boost_score_based_on_field(field, score):
+    # TODO: Decide on an appropriate boost value
+    court_boost = 3
+    title_boost = 10
+    if field == Field.TITLE:
+        return score * title_boost
+    elif field == Field.COURT:
+        return score * court_boost
+
 def cosine_score(tokens_arr):
     """
-    Takes in an array of terms, and returns a list of the top K scoring documents based on cosine similarity scores with respect to the query terms
+    Takes in an array of terms, and returns a list of the top scoring documents based on cosine similarity scores with respect to the query terms
     """
     # For every query term, cosine similarity contributions are made only for documents containing the query term
     # To optimise, we only do calculation for these documents and doing so pointwise.
@@ -98,9 +106,11 @@ def cosine_score(tokens_arr):
             # Obtain pre-computed weight of term for each document and perform calculation
             doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in log calculation as tf >= 1
             if posting.doc_id not in scores:
-                scores[posting.doc_id] = (doc_term_weight * query_term_weight)
+                scores[posting.doc_id] = (boost_score_based_on_field(posting.field, doc_term_weight) * query_term_weight)
             else:
-                scores[posting.doc_id] += (doc_term_weight * query_term_weight)
+                scores[posting.doc_id] += (boost_score_based_on_field(posting.field, doc_term_weight) * query_term_weight)
+
+    doc_ids_in_tokens_arr = find_by_document_id(tokens_arr)
 
     # 4. Perform normalisation to consider the length of the document vector
     # We save on dividing by the query vector length as it is constant for all documents
@@ -108,14 +118,17 @@ def cosine_score(tokens_arr):
     results = []
     for doc_id, total_weight in scores.items():
         ranking_score = total_weight / DOC_LENGTHS[doc_id]
+        # Now we check if any of the query terms matches 
+        # TODO: Improve the doc_id criterion below
+        if doc_id in doc_ids_in_tokens_arr:
+            ranking_score += 100 # RANDOM VALUE
         results.append((ranking_score, doc_id))
 
-    # 5. Sort the documents by score then doc_id (if same score) and return the top K highest scoring ones
-    heapq.heapify(results)
-    if len(results) >= K:
-        return [x[1] for x in heapq.nlargest(K, results, key=functools.cmp_to_key(comparator))]
-    else:
-        return [x[1] for x in heapq.nlargest(len(results), results, key=functools.cmp_to_key(comparator))]
+
+    # Sort the results in descending order of score
+    results.sort(key=functools.cmp_to_key(comparator))
+
+    return results
 
 def get_query_weight(df, tf):
     """
@@ -140,6 +153,18 @@ def find_term(term):
         return []
     POSTINGS_FILE_POINTER.seek(D[term])
     return decode(pickle.load(POSTINGS_FILE_POINTER).postings)
+
+def find_by_document_id(terms):
+    """
+    Checks if any of the query terms are document ids, if so return the document id
+    To be used after the normal boolean/free text parsing
+    """
+    document_ids = []
+    for term in terms:
+        if all(map(str.isdigit, term)):
+            if int(term) in ALL_DOC_IDS:
+                document_ids.append(int(term))
+    return document_ids
 
 # Takes in a phrasal query in the form of an array of terms and returns the doc ids which have the phrase
 # Note: Only use this for boolean retrieval, not free text mode
@@ -193,6 +218,8 @@ def merge_positions(positions1, positions2):
     return merged_positions
 
 # Performs merging of two postings
+# Note: Should perform merge positions is only used for phrasal queries
+# Term frequency does not matter for normal boolean queries
 def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     """
     Merges list1 and list2 for the AND boolean operator
@@ -207,15 +234,30 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
         posting2 = list2[curr2]
         # If both postings have the same doc id, add it to the merged list.
         if posting1.doc_id == posting2.doc_id:
-            curr1 += 1
-            curr2 += 1
-            if should_perform_merge_positions:
-                merged_positions = merge_positions(posting1.positions, posting2.positions)
-                # Only add the doc_id if the positions are not empty
-                if len(merged_positions > 0):
-                    merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
-            else:
+            # Order of fields is title -> court-> content
+            # Now we have to merge by the postings of the different fields
+            # Case 1: Both doc_id and field are the same
+            if posting1.field == posting2.field:
+                if should_perform_merge_positions:
+                    merged_positions = merge_positions(posting1.positions, posting2.positions)
+                    # Only add the doc_id if the positions are not empty
+                    if len(merged_positions > 0):
+                        merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
+                else:
+                    merged_list.insert_posting(posting1)
+                curr1 += 1
+                curr2 += 1
+            # Case 2: posting1's field smaller than posting2's field
+            elif posting1.field < posting2.field:
+                # TODO: To prove but I think this hunch is correct
+                # There should not be a case where posting2 has the same field but has merged it in previously.
+                # This insert should never be a duplicate
                 merged_list.insert_posting(posting1)
+                curr1 += 1
+            # Case 3: Converse of case 2
+            else:
+                merged_list.insert_posting(posting2)
+                curr2 += 1
         else:
             # Else if there is a opportunity to jump and the jump is less than the doc_id of the other list
             # then jump, which increments the index by the square root of the length of the list
@@ -238,6 +280,39 @@ def parse_query(query):
         return parse_boolean_query(terms_array)
     else:
         return parse_free_text_query(terms_array)
+
+def get_ranking_for_boolean_query(posting_list):
+    """
+    The scoring for boolean queries is going to follow CSS Specificity style
+    Title matches will be worth 20, court 10 and content 1 (numbers to be confirmed)
+    The overall relevance of the documents would be the sum of all these scores
+    Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
+    Then the resultant score is 11
+    """
+    title_score = 20
+    court_score = 10
+    content_score = 1
+
+    def get_boolean_query_scores(field):
+        if field == Field.TITLE:
+            return title_score
+        elif field == Field.COURT:
+            return court_score
+        else:
+            return content_score
+
+    scores = {}
+    for posting in posting_list.postings:
+        score = get_boolean_query_scores(posting.field)
+        if posting.doc_id not in scores:
+            scores[posting.doc_id] = score
+        else:
+            scores[posting.doc_id] += score
+
+    # Now we do the sorting
+    sorted_results = sorted(scores.items(), key=functools.cmp_to_key(comparator))
+
+    return [(doc_id, score) for doc_id, score in sorted_results.items()]
 
 def parse_boolean_query(terms):
     """
@@ -263,7 +338,8 @@ def parse_boolean_query(terms):
         else:
             term_posting_list = find_term(term)
         res_posting_list = merge_posting_lists(res_posting_list, term_posting_list)
-    return res_posting_list
+
+    return get_ranking_for_boolean_query(res_posting_list)
 
 def parse_free_text_query(terms):
     #Expected to add query expansion, after process(query) is done
@@ -303,7 +379,6 @@ def split_query(query):
     # Weed out empty strings
     return [term for term in terms if term], is_boolean_query
 
-
 def query_expansion(query):
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q file-of-queries -o output-file-of-results")
 
@@ -321,7 +396,7 @@ def run_search(dict_file, postings_file, queries_file, results_file):
     POSTINGS_FILE_POINTER = open(postings_file, "rb")
     D = pickle.load(dict_file_fd) # dictionary with term:file cursor value entries
     DOC_LENGTHS = pickle.load(dict_file_fd) # dictionary with doc_id:length entries
-    ALL_DOC_IDS = pickle.load(POSTINGS_FILE_POINTER) # data for optimisation, if needed
+    ALL_DOC_IDS = pickle.load(dict_file_fd) # data for optimisation, if needed
     # PostingLists for each term are accessed separately using file cursor values given in D
     # because they are significantly large and unsuitable for all of them to be used in-memory
 

@@ -42,7 +42,7 @@ def comparator(arr1, arr2):
             return -1
         elif arr2[1][1] == Field.COURT:
             return 1
-        elif arr1[1][1] == Field.COURT:
+        elif arr1[1][1] == Field.CONTENT:
             return -1
     else:
         return 0
