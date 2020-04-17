@@ -390,6 +390,31 @@ def split_query(query):
     return [term for term in terms if term], is_boolean_query
 
 def query_expansion(query):
+    #Split the query into words
+    #Remove stop words
+    #Find the synonyms of each word and append them to a set, since some of the synonyms might be repetitive
+    #Add the set of synonyms to list of extended query words
+    #Convert the extended query list to extende query string
+    #Return the string
+
+    query_words = query.split()
+    stop_words = set(stopwords.words('english'))
+    query_words = [word for word in query_words if not word in stop_words]
+    expanded_query = []
+    for word in query_words:
+        expanded_query.append(word)
+        syn_set = set()
+        for s in wordnet.synsets(word):
+            for l in s.lemmas():
+                syn_set.add(l.name())
+        expanded_query.extend(syn_set)
+
+    new_query = ' '.join([str(word) for word.lower() in expanded_query])
+
+    return new_query
+# Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
+
+def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q file-of-queries -o output-file-of-results")
 
 def run_search(dict_file, postings_file, queries_file, results_file):
