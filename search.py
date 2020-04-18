@@ -9,7 +9,7 @@ import heapq
 import functools
 from collections import Counter
 from index import Posting, PostingList, Field
-from encode import decode
+from encode import check_and_decode
 
 # Initialise Global variables
 
@@ -63,12 +63,15 @@ def stem_query(arr):
 
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
-    court_boost = 3
-    title_boost = 10
-    if field == Field.TITLE:
-        return score * title_boost
-    elif field == Field.COURT:
-        return score * court_boost
+    # court_boost = 3
+    # title_boost = 10
+    # if field == Field.TITLE:
+        # return score * title_boost
+    # elif field == Field.COURT:
+        # return score * court_boost
+    # else:
+        # return score
+    return score
 
 def cosine_score(tokens_arr):
     """
@@ -89,7 +92,7 @@ def cosine_score(tokens_arr):
         # This is nicely reflected in the term's PostingList
         # Only documents with Postings of this term will have non-zero score contributions
         posting_list = []
-        if term.contains(" "):
+        if " " in term:
             posting_list_object = perform_phrase_query(term)
             if posting_list_object is not None:
                 posting_list = posting_list_object.postings
@@ -97,7 +100,7 @@ def cosine_score(tokens_arr):
             posting_list = find_term(term)
         # Invalid query terms have no Postings and hence no score contributions;
         # in this case we advance to the next query term saving unnecessary operations
-        if not posting_list.postings:
+        if posting_list is None:
             continue
 
         # 2. Obtain the second vector's (query vector's) value for pointwise multiplication
@@ -235,13 +238,13 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     Merges list1 and list2 for the AND boolean operator
     """
     merged_list = PostingList()
-    L1 = len(list1)
-    L2 = len(list2)
+    L1 = list1.size
+    L2 = list2.size
     curr1, curr2 = 0, 0
 
     while curr1 < L1 and curr2 < L2:
-        posting1 = list1[curr1]
-        posting2 = list2[curr2]
+        posting1 = list1.postings[curr1]
+        posting2 = list2.postings[curr2]
         # If both postings have the same doc id, add it to the merged list.
         if posting1.doc_id == posting2.doc_id:
             # Order of fields is title -> court-> content
@@ -249,9 +252,9 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
             # Case 1: Both doc_id and field are the same
             if posting1.field == posting2.field:
                 if should_perform_merge_positions:
-                    merged_positions = merge_positions(decode(posting1.positions), decode(posting2.positions))
+                    merged_positions = merge_positions(check_and_decode(posting1.positions), check_and_decode(posting2.positions))
                     # Only add the doc_id if the positions are not empty
-                    if len(merged_positions > 0):
+                    if len(merged_positions) > 0:
                         merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
                 else:
                     merged_list.insert_posting(posting1)
@@ -271,16 +274,16 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
         else:
             # Else if there is a opportunity to jump and the jump is less than the doc_id of the other list
             # then jump, which increments the index by the square root of the length of the list
-            if posting1.pointer != None and posting1.pointer.doc_id < posting2.doc_id:
-                curr1 = posting1.pointer.index
-            elif posting2.pointer != None and posting2.pointer.doc_id < posting1.doc_id:
-                curr2 = posting2.pointer.index
-            # If we cannot jump, then we are left with the only option of incrementing the indexes one by one
+            # if posting1.pointer != None and posting1.pointer.doc_id < posting2.doc_id:
+                # curr1 = posting1.pointer.index
+            # elif posting2.pointer != None and posting2.pointer.doc_id < posting1.doc_id:
+                # curr2 = posting2.pointer.index
+            # # If we cannot jump, then we are left with the only option of incrementing the indexes one by one
+            # else:
+            if posting1.doc_id < posting2.doc_id:
+                curr1 += 1
             else:
-                if posting1.doc_id < posting2.doc_id:
-                    curr1 += 1
-                else:
-                    curr2 += 1
+                curr2 += 1
     return merged_list
 
 def parse_query(query):
@@ -322,7 +325,7 @@ def get_ranking_for_boolean_query(posting_list):
     # Now we do the sorting
     sorted_results = sorted(scores.items(), key=functools.cmp_to_key(comparator))
 
-    return [(doc_id, score) for doc_id, score in sorted_results.items()]
+    return [(doc_id, score) for doc_id, score in sorted_results]
 
 def parse_boolean_query(terms):
     """
@@ -331,6 +334,7 @@ def parse_boolean_query(terms):
     """
     # First filter out all the AND keywords from the term array
     filtered_terms = [term for term in terms if term != AND_KEYWORD]
+    print(filtered_terms)
 
     # Get the posting list of the first word
     first_term = filtered_terms[0]
@@ -387,6 +391,10 @@ def split_query(query):
                 start_index = current_index + 1
         current_index += 1
 
+    # Add in the last term if it exists
+    if start_index < current_index - 1:
+        terms.append(query[start_index:current_index])
+
     # Weed out empty strings
     return [term for term in terms if term], is_boolean_query
 
@@ -410,7 +418,7 @@ def query_expansion(query):
                 syn_set.add(l.name())
         expanded_query.extend(syn_set)
 
-    new_query = ' '.join([str(word) for word.lower() in expanded_query])
+    new_query = ' '.join([str(word.lower()) for word in expanded_query])
 
     return new_query
 # Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
@@ -444,15 +452,15 @@ def run_search(dict_file, postings_file, queries_file, results_file):
                 # Parse the initial query: filter punctuations, case-folding
                 line = line.rstrip("\n")
                 res = [] # contains all possible Postings for the result of a single line query
-                try:
-                    res = parse_query(line)
-                except Exception as e:
-                    print(repr(e), line)
-                    res = [] # invalid search queries
+                # try:
+                res = parse_query(line)
+                # except Exception as e:
+                    # print(repr(e), line)
+                    # res = [] # invalid search queries
 
                 # 3. Write the most relevant documents for the current query to storage
                 # in descending score order, then ascending doc_id
-                r_file.write(" ".join([str(r) for r in res]) + "\n")
+                r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
     # 4. Cleaning up: close files
     dict_file_fd.close()
