@@ -177,19 +177,22 @@ def find_by_document_id(terms):
 
 # Takes in a phrasal query in the form of an array of terms and returns the doc ids which have the phrase
 # Note: Only use this for boolean retrieval, not free text mode
-def perform_phrase_query(phrase):
+def perform_phrase_query(phrase_query):
     # Defensive programming, if phrase is empty, return false
-    if not phrase:
+    if not phrase_query:
         return False
-    phrase_posting_list = find_term(phrase[0])
+    phrases = phrase_query.split(" ")
+    phrase_posting_list = find_term(phrases[0].strip())
     if phrase_posting_list == None:
-        return PostingList() # Return empty posting list
-    for term in phrase[1:]:
+        return None
+
+    for term in phrases[1:]:
         current_term_postings = find_term(term)
         if current_term_postings == None:
-            return PostingList()
+            return None
         # Order of arguments matter
         phrase_posting_list = merge_posting_lists(phrase_posting_list, current_term_postings, True)
+        print(phrase_posting_list.size)
 
     return phrase_posting_list
 
@@ -288,7 +291,6 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
 
 def parse_query(query):
     terms_array, is_boolean_query = split_query(query)
-    terms_array = stem_query(process(terms_array))
     if is_boolean_query:
         return parse_boolean_query(terms_array)
     else:
@@ -334,8 +336,8 @@ def parse_boolean_query(terms):
     """
     # First filter out all the AND keywords from the term array
     filtered_terms = [term for term in terms if term != AND_KEYWORD]
-    print(filtered_terms)
 
+    filtered_terms = stem_query(process(terms))
     # Get the posting list of the first word
     first_term = filtered_terms[0]
     res_posting_list = None
@@ -344,6 +346,9 @@ def parse_boolean_query(terms):
     else:
         res_posting_list = find_term(first_term)
 
+    if res_posting_list is None:
+        return []
+
     # Do merging for the posting lists of the rest of the terms
     for term in filtered_terms[1:]:
         term_posting_list = None
@@ -351,6 +356,9 @@ def parse_boolean_query(terms):
             term_posting_list = perform_phrase_query(term)
         else:
             term_posting_list = find_term(term)
+
+        if term_posting_list is None:
+            return []
         res_posting_list = merge_posting_lists(res_posting_list, term_posting_list)
 
     return get_ranking_for_boolean_query(res_posting_list)
@@ -359,6 +367,7 @@ def parse_free_text_query(terms):
     # TODO: See below (delete once done)
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
+    terms = stem_query(process(terms))
     res = cosine_score(terms)
     return res
 
