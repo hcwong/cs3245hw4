@@ -94,7 +94,7 @@ def cosine_score(tokens_arr):
         # We will calculate its weight in Step 3
         # This is nicely reflected in the term's PostingList
         # Only documents with Postings of this term will have non-zero score contributions
-        posting_list = []
+        posting_list = None
         if " " in term:
             posting_list_object = perform_phrase_query(term)
             if posting_list_object is not None:
