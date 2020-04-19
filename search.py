@@ -52,12 +52,15 @@ def process(arr):
     """
     return [filter_punctuations(term) for term in arr]
 
+def stem_word(term):
+    stemmer = nltk.stem.porter.PorterStemmer()
+    return stemmer.stem(term)
+
 def stem_query(arr):
     """
     Takes in a case-folded array of terms previously processed for punctuations, tokenises it, and returns a list of stemmed terms
     """
-    stemmer = nltk.stem.porter.PorterStemmer()
-    return [stemmer.stem(term) for term in arr]
+    return [stem_word(term) for term in arr]
 
 # Ranking
 
@@ -158,6 +161,7 @@ def find_term(term):
     """
     # NOTE: LOWERCASING IS ONLY DONE HERE.
     term = term.strip().lower()
+    term = stem_word(term)
     if term not in D:
         return None
     POSTINGS_FILE_POINTER.seek(D[term])
@@ -182,7 +186,7 @@ def perform_phrase_query(phrase_query):
     if not phrase_query:
         return False
     phrases = phrase_query.split(" ")
-    phrase_posting_list = find_term(phrases[0].strip())
+    phrase_posting_list = find_term(phrases[0])
     if phrase_posting_list == None:
         return None
 
@@ -192,29 +196,27 @@ def perform_phrase_query(phrase_query):
             return None
         # Order of arguments matter
         phrase_posting_list = merge_posting_lists(phrase_posting_list, current_term_postings, True)
-        print(phrase_posting_list.size)
 
     return phrase_posting_list
 
 # Returns merged positions for phrasal query
 # positions2 comes from the following term and positions1 from
 # the preceeding term
-def merge_positions(positions1, positions2):
+def merge_positions(positions1, positions2, doc_id):
     merged_positions = []
     L1 = len(positions1)
     L2 = len(positions2)
     index1, index2 = 0, 0
+    offset1, offset2 = 0, 0
     # This is for our gap encoding
     last_position_of_merged_list = 0
     # Do this because we have byte encoding
     calculate_actual_pos_from_offset = lambda curr_value, offset: curr_value + offset
-    offset1, offset2 = positions1[0], positions2[0]
     while index1 < L1 and index2 < L2:
         proper_position2 = calculate_actual_pos_from_offset(positions2[index2], offset2)
         if calculate_actual_pos_from_offset(positions1[index1], offset1) + 1 == proper_position2:
             # Only merge the position of index2 because
             # We only need the position of the preceeding term
-
             # Need to do some math now because of our gap encoding, sadly
             position_to_append = proper_position2 - last_position_of_merged_list
             last_position_of_merged_list = proper_position2
@@ -233,7 +235,7 @@ def merge_positions(positions1, positions2):
             index1 += 1
     return merged_positions
 
-# Performs merging of two postings
+# Performs merging of two posting lists
 # Note: Should perform merge positions is only used for phrasal queries
 # Term frequency does not matter for normal boolean queries
 def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
@@ -255,7 +257,7 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
             # Case 1: Both doc_id and field are the same
             if posting1.field == posting2.field:
                 if should_perform_merge_positions:
-                    merged_positions = merge_positions(check_and_decode(posting1.positions), check_and_decode(posting2.positions))
+                    merged_positions = merge_positions(check_and_decode(posting1.positions), check_and_decode(posting2.positions), posting1.doc_id)
                     # Only add the doc_id if the positions are not empty
                     if len(merged_positions) > 0:
                         merged_list.insert_without_encoding(posting1.doc_id, posting1.field, merged_positions)
@@ -325,9 +327,9 @@ def get_ranking_for_boolean_query(posting_list):
             scores[posting.doc_id] += score
 
     # Now we do the sorting
-    sorted_results = sorted(scores.items(), key=functools.cmp_to_key(comparator))
+    sorted_results = sorted([(score, doc_id) for doc_id, score in scores.items()], key=functools.cmp_to_key(comparator))
 
-    return [(doc_id, score) for doc_id, score in sorted_results]
+    return sorted_results
 
 def parse_boolean_query(terms):
     """
@@ -337,7 +339,7 @@ def parse_boolean_query(terms):
     # First filter out all the AND keywords from the term array
     filtered_terms = [term for term in terms if term != AND_KEYWORD]
 
-    filtered_terms = stem_query(process(terms))
+    filtered_terms = process(filtered_terms)
     # Get the posting list of the first word
     first_term = filtered_terms[0]
     res_posting_list = None
@@ -367,7 +369,7 @@ def parse_free_text_query(terms):
     # TODO: See below (delete once done)
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
-    terms = stem_query(process(terms))
+    terms = process(terms)
     res = cosine_score(terms)
     return res
 
