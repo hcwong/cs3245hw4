@@ -394,11 +394,12 @@ def split_query(query):
             else:
                 start_index = current_index + 1
                 is_in_phrase = True
-                is_boolean_query = True
         elif current_char == " ":
             # Append the word if not parsing part of phrase
             if not is_in_phrase:
                 terms.append(query[start_index:current_index])
+                if (query[start_index:current_index] == AND_KEYWORD):
+                    is_boolean_query = True
                 start_index = current_index + 1
         current_index += 1
 
