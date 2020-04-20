@@ -10,6 +10,8 @@ import functools
 from collections import Counter
 from index import Posting, PostingList, Field
 from encode import check_and_decode
+from nltk.corpus import wordnet
+from nltk.corpus import stopwords
 
 # Initialise Global variables
 
