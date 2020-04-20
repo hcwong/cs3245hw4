@@ -47,3 +47,9 @@ def decode(bytestream):
             numbers.append(n)
             n = 0
     return numbers
+
+def check_and_decode(input):
+    if isinstance(input, list):
+        return input
+    else:
+        return decode(input)
