@@ -14,15 +14,22 @@ from enum import IntEnum
 
 # Self-defined constants, functions and classes
 
-def filter_punctuations(s):
+def filter_punctuations(s, keep_quo = False):
     """
     Replaces certain punctuations from Strings with space, to be removed later on
     Takes in String s and returns the processed version of it
     """
+    punct_wo_quo = '''!?-;:\\,./#$%^&<>[]{}*`'=@+…’-–—_~()'''
     punctuations = '''!?-;:"\\,./#$%^&<>[]{}*`'=@+…“”’-–—_~()'''
-    for character in s:
-        if character in punctuations:
-            s = s.replace(character, " ")
+
+    if keep_quo:
+        for character in s:
+            if character in punct_wo_quo:
+                s = s.replace(character, " ")
+    else:
+        for character in s:
+            if character in punctuations:
+                s = s.replace(character, " ")
     return s
 
 def comparator(arr1, arr2):
