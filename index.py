@@ -29,22 +29,32 @@ def comparator(arr1, arr2):
     """
     Sorts the 2 lists by term first, then doc_id in ascending order, then field (title -> court -> content)
     """
-    if arr1[0] > arr2[0]:  # term
+    if arr1[0] > arr2[0]:  # by term
         return 1
     elif arr2[0] > arr1[0]:
         return -1
-    elif arr1[1][0] != arr2[1][0]:  # doc_id
+    elif arr1[1][0] != arr2[1][0]:  # same term and different doc_id  -> by doc_id
         return arr1[1][0] - arr2[1][0]
-    elif arr1[1][1] != arr2[1][1]:  # Field title -> court -> content
+    elif arr1[1][1] != arr2[1][1]:
+        # same term and doc_id: they can only differ by: title -> court -> content
+        # note the following cases:
+        # both are title - does not matter which is placed first
+        # one is of higher priority - place the higher priority one first
+
+        # title
         if arr2[1][1] == Field.TITLE:
             return 1
         elif arr1[1][1] == Field.TITLE:
             return -1
+
+        # court
         elif arr2[1][1] == Field.COURT:
             return 1
         elif arr1[1][1] == Field.COURT:
             return -1
+
     else:
+        # content
         return 0
 
 class VSM:
@@ -66,9 +76,12 @@ class VSM:
         Punctuation handling, tokenisation, case-folding, stemming are applied to generate terms
         """
         # Step 1: Obtain Postings for material to create VSM in Step 3
+
+        # We obtain a list of documents with keys:
+        # 'doc_id', 'title', 'content', 'date_posted', 'court', as well as positional indexes of
+        # 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes'
         set_of_documents = self.get_documents()
         tokens_list = []
-
         # Save flattened Counter results in tokens_list
         for res in set_of_documents:
             doc_id = res['doc_id']
@@ -79,6 +92,11 @@ class VSM:
 
         tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
 
+        # tokens_list is now a list of structured data that has all terms sorted by their values:
+        # firstly by term, then doc_id, then title, court, content
+        # note that actual positiions are gap encoded, so only the very first entry is the actual position;
+        # the rest need to be calculated incrementally
+
         # Step 2: Get a list of all available doc_ids in ascending order
         self.docid_set = set([el['doc_id'] for el in set_of_documents])  # Process doc_id into a set
 
@@ -87,27 +105,65 @@ class VSM:
         # Step 3: Fill up the dictionary with PostingLists of all unique terms
         # The dictionary maps the term to its PostingList
         for i in range(len(tokens_list)):
+
             curr = tokens_list[i]
             term = curr[0]
             curr_tuple = curr[1] # (doc_id, Field, freq_in_doc)
-            if i == 0 or term != tokens_list[i-1][0]:
-                # new term
+
+            if (i == 0 or term != tokens_list[i-1][0]):
+                # new term detected, create new PostingList
                 self.dictionary[term] = PostingList()
+
             # insert into appropriate PostingList
             self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
 
-        print("Calculating document vector length")
-
         # Step 4: Calculate doc_lengths for normalization
+        print("Calculating document vector length")
         self.calculate_doc_length()
 
         for _, posting_list in self.dictionary.items():
             posting_list.generate_skip_list()
 
+    def get_documents(self):
+        """
+        Returns a list of documents (each document is represented by a dictionary)
+        Dictionary/dictionary keys:
+        'doc_id', 'title', 'content', 'date_posted', 'court', as well as positional indexes of
+        'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes'
+        """
+        # Result container for collating all possible dictionary file terms
+        set_of_documents = []
+
+        # A document is one part of the csv file that has:
+        # doc_id, title, content, date_posted, court
+        # Each of these are keys to access using a dictionary
+        documents = self.process_file() # split the csv file to get all documents
+        print("Done processing file")
+
+        # Create 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes'
+        # Each of these are specific to a document
+        # These are in addition to the (doc_id, title, content, date_posted, court) previously
+        # Each document is updated with these new indexes, are stored in set_of_documents
+        count = 0
+        for document in documents:
+            document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
+            document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
+            document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
+            set_of_documents.append(document)
+
+            print(count," Generated positional indexes")
+            count += 1
+        print("Done getting documents")
+
+        return set_of_documents
+
     # Read the file in and split by the characters '",'
     # Processes the data set into an array of cases/documents
     # Note: This function DOES NOT filter punctuation and lower case
     def process_file(self):
+        """
+        Reads in the dataset file and returns all individual documents in a list
+        """
         with open(self.in_dir, encoding='utf-8') as f:
             """
             # prevent csv field larger than field limit error
@@ -141,48 +197,22 @@ class VSM:
                   document['court'] = row[4].strip('')
                   documents.append(document)
                 index += 1
-                # # TODO: Delete
-                #if index == 60:
-                  #break
+
+#########################################
+                # # TODO: Delete - THIS IS FOR TESTING
+                if index == 60:
+                  break
+#########################################
+
             return documents
-
-    def get_documents(self):
-        # Result container for collating all possible dictionary file terms
-        set_of_documents = []
-        documents = self.process_file()
-        print("Done processing file")
-
-        # Then we handle the fields: content, title and court (to generate position index)
-        # of 'content_positional_indexes', 'title_positional_indexes' is made from 'title', 'court_positional_indexes'
-        count = 0
-        for document in documents:
-            document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
-            document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
-            document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
-            set_of_documents.append(document)
-            print(count," Generated positional indexes")
-            count += 1
-
-        print("Done getting documents")
-
-        return set_of_documents
-
-    def generate_token_list(self, doc_id, field_type, positional_indexes):
-        """
-        Generates token from a list of positional index
-        """
-        tokens_list = []
-        for term, positions in positional_indexes.items():
-            tokens_list.append([term, (doc_id, field_type, positions)])  # [term, (doc_ID, Field, position]
-        return tokens_list
 
     def generate_positional_indexes(self, paragraph):
         """
-        #Generates positional index from a paragraph/string
-        #by using the function generate_list_of_words() and generate_positional_indexes_from_list()
+        Generates positional index from a paragraph/string
+        by using the function generate_list_of_words() and generate_positional_indexes_from_list()
         """
         processed_words = self.generate_list_of_words(paragraph)
-        # This is a dictionary of word and the positions it appears in
+        # This is a dictionary of word and the (gap-encoded) positions it appears in
         positional_indexes = self.generate_positional_indexes_from_list(processed_words, 0)
         return positional_indexes
 
@@ -190,37 +220,58 @@ class VSM:
         """
         Generates a list of processed words from the string it was input with
         """
+        # break into word-level terms
         sentences = nltk.sent_tokenize(paragraph)
         words_array = [nltk.word_tokenize(s) for s in sentences]
         words = [w for arr in words_array for w in arr]
+        # preprocess individual words
         processed_words = self.process_words(words)
         return processed_words
 
-    def generate_positional_indexes_from_list(self, words, start_index):
-        """
-        Generate the positional indexes for the phrasal queries from a list of words
-        Does gap encoding too
-        """
-        positions = defaultdict(list)
-        last_position = {}
-        for i in range(start_index, len(words)):
-            word = words[i]
-            # Store gap encoding
-            if word not in last_position:
-                last_position[word] = i
-                positions[word].append(i)
-            else:
-                positions[word].append(i - last_position[word])
-                last_position[word] = i
-        return positions
-
     def process_words(self, words):
         """
-        Stems the already lowercase version of the word given and lowercases
+        Stems the words given and casefolds them to lowercase
         Takes in the list of Strings and returns their stemmed version in a list
         """
         stemmer = nltk.stem.porter.PorterStemmer()
         return [stemmer.stem(w.lower()) for w in words]
+
+    def generate_positional_indexes_from_list(self, words, start_index):
+        """
+        Generate the positional indexes from a list of words (applying gap encoding for positions)
+        This is used for phrasal queries during query phase
+        Therefore, compression is applied here via gap encoding
+        """
+        # positions is a dictionary scoring all the terms and their positions in a list each
+        # Each term has their own list of positions
+        positions = defaultdict(list)
+        # last_position is a dictionary storing each respective word's last seen position
+        # This is not a list
+        # This is used for calculating the gap encoding values by substraction
+        last_position = {}
+
+        for i in range(start_index, len(words)):
+            word = words[i]
+            # Store gap encoding
+            if word not in last_position:
+                # totally new word, has no previous occurences
+                last_position[word] = i # initilaise its position list with this position
+                positions[word].append(i) # add this position to the list
+            else:
+                # word is seen before
+                positions[word].append(i - last_position[word]) # update the position list with the gap
+                last_position[word] = i # update the last seen position
+
+        return positions
+
+    def generate_token_list(self, doc_id, field_type, positional_indexes):
+        """
+        Generates token from a list of positional index
+        """
+        tokens_list = []
+        for term, position in positional_indexes.items():
+            tokens_list.append([term, (doc_id, field_type, position)])  # [term, (doc_ID, Field, position)]
+        return tokens_list
 
     def calculate_doc_length(self):
         """
@@ -244,7 +295,7 @@ class VSM:
         """
         Writes PostingList objects into postings file and all terms into dictionary file
         Document lengths are also written into dictionary file
-        All doc_ids are also written into postings file
+        All doc_ids are also written into dictionary file
         """
         #out_intermediate = open("intermediate.txt", "w", encoding='utf8')  # For debuging purpose, TO DELETE
 
