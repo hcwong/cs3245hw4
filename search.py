@@ -308,7 +308,7 @@ def run_search(dict_file, postings_file, queries_file, results_file):
     POSTINGS_FILE_POINTER = open(postings_file, "rb")
     D = pickle.load(dict_file_fd) # dictionary with term:file cursor value entries
     DOC_LENGTHS = pickle.load(dict_file_fd) # dictionary with doc_id:length entries
-    ALL_DOC_IDS = pickle.load(POSTINGS_FILE_POINTER) # data for optimisation, if needed
+    ALL_DOC_IDS = pickle.load(dict_file_fd) # data for optimisation, if needed
     # PostingLists for each term are accessed separately using file cursor values given in D
     # because they are significantly large and unsuitable for all of them to be used in-memory
 
