@@ -122,7 +122,7 @@ class VSM:
                 # decrease the maxInt value by factor 10
                 # as long as the OverflowError occurs.
                 try:
-                    csv.field_size_limit(maxInt)
+                    #csv.field_size_limit(maxInt)
                     break
                 except OverflowError:
                     maxInt = int(maxInt / 10)
