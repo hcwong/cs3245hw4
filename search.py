@@ -20,7 +20,9 @@ POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
-EMPHASIS_ON_ORIG = 0.3 # edit this to change Rocchio co-efficients
+EMPHASIS_ON_ORIG = 1.0 # initial query
+EMPHASIS_ON_RELDOC = 0.75 # relevant marked documents
+EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING = 1.5
 
 def comparator(tup1, tup2):
     """
@@ -84,43 +86,36 @@ def cosine_score(tokens_arr, relevant_docids):
     """
     Takes in an array of terms, and returns a list of the top scoring documents based on cosine similarity scores with respect to the query terms
     """
-    # Some notes before we begin:
-    # For every query term, cosine similarity contributions are made only for documents
-    # containing the query term's non-zero weight value terms
-    # To optimise, we only do calculation for these documents and do so pointwise:
-    # We obtain score contributions term-wise and accumulate them before moving onto the next term,
-    # rather than wait to do so only after constructing the query vector which incurs overhead.
 
     # We first obtain query vector value for specific term
     # Then, we perform Rocchio Algorithm to finalise the query vector based on relevance assessments
     # Rocchio Algorithm:
     # 1. Take in original query vector value for this term
-    # 2. Take in all relevant_docids vector values for this term, accumulate them and then average them out
+    # 2. Take in all relevant_docids vector values for this term, accumulate them and then average/normalise them
     # 3. Use this as the new query vector's value for this term
-
     # Once done, we calculate each term's score contribution to every one of its documents' overall score as with the standard VSM
     # This will reflect the effects of the Rocchio Algorithm
 
     # We normalise at the end to optimise speed.
 
+    # Step 1: Preparation
     scores = {} # to store all cosine similarity scores for each query term
     term_frequencies = Counter(tokens_arr) # the query's count vector for every of its terms, to obtain data for pointwise multiplication
-
-    # This is the set of all relevant documents' top K (already processed) terms,
-    # which can add up to be more than K
+    # Set of all relevant documents' top K (already processed) terms, and query's processed terms
     # Reminder: They are ALREADY PROCESSED aka filtered for punctuations, casefolded to lowercase, stemmed
-
     union_of_relevant_doc_top_terms = []
     for impt in relevant_docids:
         union_of_relevant_doc_top_terms.append(ALL_DOC_IDS[impt])
-    union_of_relevant_doc_top_terms = set(union_of_relevant_doc_top_terms) # all unique now
+    processed_terms = [stem_word(w.strip().lower()) for w in tokens_arr]
+    union_of_relevant_doc_top_terms.append(processed_terms)
+    union_of_relevant_doc_top_terms = set(union_of_relevant_doc_top_terms) # all unique now, all are processed
 
+    # Step 2: Obtain PostingList of interest
     is_entirely_phrasal = True # if False, should perform Rocchio for Query Refinement
     for term in tokens_arr:
-
-        # 1. Obtain the first vector, representing all the document(s) containing the term
-        # We will calculate its weight in Step 3
-        # This is nicely reflected in the term's PostingList
+        # Obtain the first vector, representing all the document(s) containing the term
+        # We will calculate its weight later
+        # Document IDs are nicely reflected in the term's PostingList
         # Only documents with Postings of this term will have non-zero score contributions
         posting_list = None
         query_type = "YET DECIDED" # for the current query term
@@ -136,67 +131,45 @@ def cosine_score(tokens_arr, relevant_docids):
             query_type = "FREETEXT"
             posting_list = find_term(term)
             is_entirely_phrasal = False # should perform Rocchio
-        # Invalid query terms have no Postings and hence no score contributions;
-        # in this case we advance to the next query term saving unnecessary operations
         if posting_list is None:
+            # Invalid query term
             continue
 
-        # 2. Obtain the second vector's (query vector's) value for pointwise multiplication
-
+        # Step 3: Obtain the query vector's (possibly refined) value for pointwise multiplication
         query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[term]) # before/without Rocchio
-
+        # Query Refinement: Rocchio Algorithm (Part 1: common terms with query)
+        # Want to use given relevant documents to get entry of the term in the refined query vector
         if (query_type == "FREETEXT"):
-            # Apply Rocchio Algorithm (Part 1: common terms with query) for Query Refinement:
-            # ie the weight entry of the term in the refined (aka finalised) query in the term-document matrix
-            # Note we treat both the initial query and relevant-marked documents as documents
-
-            # We are doing query refinement for this current term
-            # no need to do again later: remove it first!
-            # Moreover, since we have a set of already processed words,
-            # we need to compare with the processed form of the current term
-            processed_term = term.strip().lower()
-            processed_term = stem_word(term)
-            if term in union_of_relevant_doc_top_terms:
-                union_of_relevant_doc_top_terms.remove(term)
-
-            # how many times this term appears in query vector
-            # this is the initial query's contribution to tf to calculate refined query value for this term
-            initial_query_value = query_term_weight
-
-            # calculate the centroid value for tf for calculating refined query value for this term (done later)
-            # documents can have a 0 contribution for particular terms if they dont contain them
-            # Note: It is completely possible for relevant_centroid_value to be 0
+            # We are doing query refinement for this current term; no need to do again later: remove it first!
+            # current term is not processed -> Need to process first to compare
+            processed_term = stem_word(term.strip().lower())
+            union_of_relevant_doc_top_terms.remove(processed_term)
+            # calculate the centroid value for tf for calculating refined query value for this term
+            # Note: documents can have a 0 contribution for particular terms if they don't contain them
             accumulated_value = 0
             for doc_id in relevant_docids:
-                # We have the posting list for the term, we just need to scan through it
-                # to get the contribution of this current doc_id marked relevant
-                accumulated_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)
+                # divide by doc_lengths for effective normalisation to consider distribution of the current term within the document
+                accumulated_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)/DOC_LENGTHS[doc_id]
             relevant_centroid_value = accumulated_value/len(relevant_docids)
-
-            # calculate the Rocchio-refined value for this current entry in the matrix to represent the finalised vector
+            # Use the relevant 'centroid' to calculate refined query entry
             if (relevant_centroid_value > 0):
                 # most of the time, it should arrive at this branch
-                rocchio_refined_query_value = (EMPHASIS_ON_ORIG * initial_query_value) + ((1-EMPHASIS_ON_ORIG) * relevant_centroid_value)
-                query_term_weight = rocchio_refined_query_value
+                query_term_weight = (EMPHASIS_ON_ORIG * query_term_weight) + (EMPHASIS_ON_RELDOC * relevant_centroid_value)
             else:
-                # better off without, or error in Rocchio Algo
+                # better off without, or error in Rocchio Algo value
                 query_term_weight = initial_query_value
 
-        # 3. Perform pointwise multiplication for the 2 vectors
-        # The result represents the cosine similarity score contribution from the current term before normalisation
-        # Accumulate all of these contributions to obtain the final score before normalising
+        # Step 4: Perform scoring by pointwise multiplication for the 2 vectors
+        # Accumulate all score contribution from the current term before normalisation for lnc.ltc scheme
+        # Boost accordingly to fields/zones
         for posting in posting_list.postings:
-            # Obtain weight of term for each document and perform calculation
-            doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in log calculation as tf >= 1
+            doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in lnc calculation as tf >= 1
             if posting.doc_id not in scores:
                 scores[posting.doc_id] = (boost_score_based_on_field(posting.field, doc_term_weight) * query_term_weight)
             else:
                 scores[posting.doc_id] += (boost_score_based_on_field(posting.field, doc_term_weight) * query_term_weight)
 
-    # Rocchio Part 2 (if needed)
-
-    # Since we have done the Part 1 for terms which are shared by the pool and the actual query,
-    # we are left with those uncalculated yet. SInce the full query does not contain these terms,
+    # Step 5 (Optional): Rocchio Part 2 (if needed; for unadjusted terms in top_K)
     # We begin with an initial query vector value of 0. And then we add the averaged 'centroid' value
     # which derived from the documents marked as relevant by the lawyers
     # Note these terms are already processed; we need to use find_already_processed_term(term) function
@@ -205,7 +178,7 @@ def cosine_score(tokens_arr, relevant_docids):
         # for terms that have not been covered, but need to be considered by Rocchio
         while (len(union_of_relevant_doc_top_terms) > 0):
 
-            # keep finding terms to do scoring until empty
+            # keep finding terms to do scoring until empty; removal by .pop(0)
             next_term = union_of_relevant_doc_top_terms.pop(0)
 
             # Find posting list for the term
@@ -217,8 +190,8 @@ def cosine_score(tokens_arr, relevant_docids):
             final_query_value = 0 # Initialised at 0 since the tf measure gives 0 in the ltc scheme
             for doc_id in relevant_docids:
                 # this is entirely made from contributions of the relevant documents
-                final_query_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)
-            final_query_value = (1-EMPHASIS_ON_ORIG) * final_query_value/len(relevant_docids)
+                final_query_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)/DOC_LENGTHS[doc_id]
+            final_query_value = (EMPHASIS_ON_RELDOC) * final_query_value/len(relevant_docids)
 
             for posting in posting_list.postings:
                 # Obtain weight of term for each document and perform calculation
@@ -229,31 +202,28 @@ def cosine_score(tokens_arr, relevant_docids):
                     scores[posting.doc_id] += (boost_score_based_on_field(posting.field, doc_term_weight) * final_query_value)
 
 
+    # Step 6: Perform normalisation to consider the length of the document vector
+    # We save on dividing by the query vector length which is constant and does not affect score comparison
     # At this point, all scoring is done, except normalising
-
     doc_ids_in_tokens_arr = find_by_document_id(tokens_arr)
-
-    # 4. Perform normalisation to consider the length of the document vector
-    # We save on dividing by the query vector length as it is constant for all documents
-    # and therefore does not affect comparison of scores
     results = []
     for doc_id, total_weight in scores.items():
-        ranking_score = total_weight / DOC_LENGTHS[doc_id]
+        ranking_score = total_weight/DOC_LENGTHS[doc_id]
         # Now we check if any of the query terms matches
         # TODO: Improve the doc_id criterion below
+        # Since the user searches for terms which he/she tends to want, we place higher emphasis on these
         if doc_id in doc_ids_in_tokens_arr:
-            ranking_score += 100 # RANDOM VALUE
+            ranking_score *= EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING
         results.append((ranking_score, doc_id))
 
-
-    # Sort the results in descending order of score
+    # Step 7: Sort the results in descending order of score
     results.sort(key=functools.cmp_to_key(comparator))
-
     return results
 
 def find_term_specific_weight_for_specified_id(doc_id, posting_list):
     """
     Returns the accumulated weight (regardless of field type) for the stated document of doc_id seen in posting_list (which is a PostingList for a given dictionary term)
+    Score is returned in ltc scheme, following that for query
     """
 
     result = 0 # remains 0 if the doc_id marked relevant does not contain the term that the PostingList represents for
@@ -265,9 +235,11 @@ def find_term_specific_weight_for_specified_id(doc_id, posting_list):
             # number of positions in positional index is the number of occurrences of this term in that field
             tf += len(posting.positions)
 
-    # if the specified document does contain the term, return lnc weight, otherwise return 0
+    # if the specified document does contain the term, return ltc weight (following query), otherwise return 0
     if (tf > 0):
-        result = 1 + math.log(tf, 10)
+        df = posting_list.unique_docids
+        N = len(ALL_DOC_IDS)
+        result = (1 + math.log(tf, 10)) * math.log(N/df, 10)
 
     return result
 
@@ -595,10 +567,10 @@ def run_search(dict_file, postings_file, queries_file, results_file):
 
     # 1. Reading data from files into memory: File Pointer Mappings, Document Lengths, Document IDs
     dict_file_fd = open(dict_file, "rb")
-    POSTINGS_FILE_POINTER = open(postings_file, "rb")
     D = pickle.load(dict_file_fd) # dictionary with term:file cursor value entries
     DOC_LENGTHS = pickle.load(dict_file_fd) # dictionary with doc_id:length entries
     ALL_DOC_IDS = pickle.load(dict_file_fd) # data for optimisation, e.g. Rocchio Algo
+    POSTINGS_FILE_POINTER = open(postings_file, "rb")
     # PostingLists for each term are accessed separately using file cursor values given in D
     # because they are significantly large and unsuitable for all of them to be used in-memory
 
