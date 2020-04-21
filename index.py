@@ -176,7 +176,7 @@ class VSM:
                 # accumulate_counts has a possibility of going below K
                 # to avoid null pointer exception, we use < len(accumulate_counts)
                 if (i < len(accumulate_counts)):
-                    document['top_K'].append(document['top_K'][i][0])
+                    document['top_K'][i] = document['top_K'][i][0]
                 else:
                     break;
             # Now, document['top_K'] will be a list of the top K terms for the document
