@@ -134,8 +134,6 @@ class VSM:
             else:
                 self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
 
-            print("done with filling up dictionary term PostingLists")
-
         # Step 5: Calculate doc_lengths for normalization
         print("Calculating document vector length")
         self.calculate_doc_length()
@@ -293,7 +291,7 @@ class VSM:
         Generates entries from a list of positional index
         """
         tokens_list = []
-        for term, positions in positional_indexes.items():
+        for term, position in positional_indexes.items():
             tokens_list.append([term, (doc_id, field_type, position)])  # [term, (doc_ID, Field, position)]
 
         return tokens_list
@@ -323,7 +321,7 @@ class VSM:
             # Since each term has a non-zero tf contribution to give a non-zero length contribution (due to lnc document weighting scheme)
             # to the length of the document vector if the term appears in the document vector,
             # we calculate this length contribution to the document length
-            for id, tf_value in tf_overall.items():
+            for id, tf in tf_overall.items():
                 posting_weight = 1 + math.log(tf, 10) # lnc for documents, tf = previously accumulated tf value is guarenteed > 0
                 if id not in self.doc_lengths:
                     self.doc_lengths[id] = posting_weight * posting_weight
@@ -412,9 +410,9 @@ class PostingList:
         return self.postings[index]
 
     def generate_skip_list(self):
-        skip_distance = math.floor(math.sqrt(self.get_size()))
+        skip_distance = math.floor(math.sqrt(len(self.postings)))
         # -1 to prevent reading from invalid index, due to 0 indexed lists
-        for i in range(self.get_size() - skip_distance - 1):
+        for i in range(len(self.postings) - skip_distance - 1):
             self.postings[i].pointer = self.postings[i + skip_distance]
 
     def generate_string_of_postinglist(self):
