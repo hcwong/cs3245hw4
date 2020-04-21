@@ -78,14 +78,26 @@ def boost_score_based_on_field(field, score):
         # return score
     return score
 
-def cosine_score(tokens_arr):
+def cosine_score(tokens_arr, relevant_docids):
     """
     Takes in an array of terms, and returns a list of the top scoring documents based on cosine similarity scores with respect to the query terms
     """
+    # Some notes before we begin:
     # For every query term, cosine similarity contributions are made only for documents containing the query term
     # To optimise, we only do calculation for these documents and doing so pointwise.
     # Here, we obtain score contributions term-wise and accumulate them before moving onto the next term,
     # rather than wait to do so only after constructing the query vector which incurs overhead.
+
+    # We first obtain query vector value for specific term
+    # Then, we perform Rocchio Algorithm to finalise the query vector based on relevance assessments
+    # Rocchio Algorithm:
+    # 1. Take in original query vector value for this term
+    # 2. Take in all relevant_docids vector values for this term, accumulate them and then average them out
+    # 3. Use this as the new query vector's value for this term
+
+    # Once done, we calculate each term's score contribution to every one of its documents' overall score as with the standard VSM
+    # This will reflect the effects of the Rocchio Algorithm
+
     # We normalise at the end to optimise speed.
 
     scores = {} # to store all cosine similarity scores for each query term
@@ -109,8 +121,29 @@ def cosine_score(tokens_arr):
             continue
 
         # 2. Obtain the second vector's (query vector's) value for pointwise multiplication
-        # Calculate the weight entry of the term in the query, of the term-document matrix
-        query_term_weight = get_query_weight(posting_list.size, term_frequencies[term])
+
+        query_term_weight = get_query_weight(posting_list.size, term_frequencies[term]) # without Rocchio
+
+        if (True):
+            # Apply Rocchio Algorithm for Query Refinement:
+            # ie the weight entry of the term in the refined (aka finalised) query in the term-document matrix
+            # Note we treat both the initial query and relevant-marked documents as documents
+
+            # this is the initial query's contribution to tf to calculate refined query value for this term
+            initial_query_value = term_frequencies[term]
+
+            # calculate the centroid value for tf for calculating refined query value for this term (done later)
+            accumulated_value = 0
+            for doc_id in relevant_docids:
+                # We have the posting list for the term, we just need to scan through it
+                # to get the contribution of this current doc_id marked relevant
+                accumulated_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)
+            relevant_centroid_value = accumulated_value/len(relevant_docids)
+
+            EMPHASIS_ON_ORIG = 0.3
+            rocchio_refined_query_value = (EMPHASIS_ON_ORIG * initial_query_value) + ((1-EMPHASIS_ON_ORIG) * relevant_centroid_value)
+
+            query_term_weight = rocchio_refined_query_value
 
         # 3. Perform pointwise multiplication for the 2 vectors
         # The result represents the cosine similarity score contribution from the current term before normalisation
@@ -132,7 +165,7 @@ def cosine_score(tokens_arr):
     results = []
     for doc_id, total_weight in scores.items():
         ranking_score = total_weight / DOC_LENGTHS[doc_id]
-        # Now we check if any of the query terms matches 
+        # Now we check if any of the query terms matches
         # TODO: Improve the doc_id criterion below
         if doc_id in doc_ids_in_tokens_arr:
             ranking_score += 100 # RANDOM VALUE
@@ -143,6 +176,27 @@ def cosine_score(tokens_arr):
     results.sort(key=functools.cmp_to_key(comparator))
 
     return results
+
+def find_term_specific_weight_for_specified_id(doc_id, posting_list):
+    """
+    Returns the accumulated tf (regardless of field type) for the stated document of doc_id seen in posting_list (which is a PostingList for a given dictionary term)
+    """
+
+    result = 0 # remains 0 if the doc_id marked relevant does not contain the term that the PostingList represents for
+    tf = 0
+
+    # scan through posting_list and accumulate to get the specified document's total tf regardless of field type
+    for posting in posting_list.postings:
+        if (posting.doc_id == doc_id):
+            # number of positions in positional index is the number of occurrences of this term in that field
+            tf += len(posting.positions)
+
+    # if the specified document does contain the term, return accumulated tf, otherwise return 0
+    if (tf > 0):
+        result = 1 + math.log(len(posting.positions), 10)
+
+    return result
+
 
 def get_query_weight(df, tf):
     """
@@ -380,7 +434,7 @@ def parse_free_text_query(terms, relevant_docids):
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
     terms = process(terms)
-    res = cosine_score(terms)
+    res = cosine_score(terms, relevant_docids)
     return res
 
 def split_query(query):

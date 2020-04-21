@@ -197,14 +197,15 @@ class VSM:
                   document['court'] = row[4].strip('')
                   documents.append(document)
                 index += 1
-
-"""
-                # # TODO: Delete - THIS IS FOR TESTING
-                if index == 60:
-                  break
-"""
-
             return documents
+
+
+
+#                # # TODO: Delete - THIS IS FOR TESTING
+#                if index == 60:
+#                  break
+
+
 
     def generate_positional_indexes(self, paragraph):
         """
