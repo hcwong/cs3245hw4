@@ -305,8 +305,8 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     Merges list1 and list2 for the AND boolean operator
     """
     merged_list = PostingList()
-    L1 = list1.unique_docids
-    L2 = list2.unique_docids
+    L1 = len(list1.postings)
+    L2 = len(list2.postings)
     curr1, curr2 = 0, 0
 
     while curr1 < L1 and curr2 < L2:
