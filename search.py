@@ -179,7 +179,7 @@ def cosine_score(tokens_arr, relevant_docids):
 
 def find_term_specific_weight_for_specified_id(doc_id, posting_list):
     """
-    Returns the accumulated tf (regardless of field type) for the stated document of doc_id seen in posting_list (which is a PostingList for a given dictionary term)
+    Returns the accumulated weight (regardless of field type) for the stated document of doc_id seen in posting_list (which is a PostingList for a given dictionary term)
     """
 
     result = 0 # remains 0 if the doc_id marked relevant does not contain the term that the PostingList represents for
