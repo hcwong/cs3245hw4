@@ -10,6 +10,8 @@ import functools
 from collections import Counter
 from index import Posting, PostingList, Field
 from encode import check_and_decode
+from nltk.corpus import wordnet
+from nltk.corpus import stopwords
 
 # Initialise Global variables
 
@@ -291,14 +293,14 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 curr2 += 1
     return merged_list
 
-def parse_query(query):
+def parse_query(query, relevant_docids):
     terms_array, is_boolean_query = split_query(query)
     if is_boolean_query:
-        return parse_boolean_query(terms_array)
+        return parse_boolean_query(terms_array, relevant_docids)
     else:
-        return parse_free_text_query(terms_array)
+        return parse_free_text_query(terms_array, relevant_docids)
 
-def get_ranking_for_boolean_query(posting_list):
+def get_ranking_for_boolean_query(posting_list, relevant_docids):
     """
     The scoring for boolean queries is going to follow CSS Specificity style
     Title matches will be worth 20, court 10 and content 1 (numbers to be confirmed)
@@ -306,6 +308,7 @@ def get_ranking_for_boolean_query(posting_list):
     Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
     Then the resultant score is 11
     """
+    relevant_score = 100000
     title_score = 20
     court_score = 10
     content_score = 1
@@ -326,12 +329,19 @@ def get_ranking_for_boolean_query(posting_list):
         else:
             scores[posting.doc_id] += score
 
+    # Add to the ones judged relevant by humans
+    for relevant_docid in relevant_docids:
+        if relevant_docid in scores:
+            scores[relevant_docid] = relevant_score
+        else:
+            scores[relevant_docid] += relevant_score
+
     # Now we do the sorting
     sorted_results = sorted([(score, doc_id) for doc_id, score in scores.items()], key=functools.cmp_to_key(comparator))
 
     return sorted_results
 
-def parse_boolean_query(terms):
+def parse_boolean_query(terms, relevant_docids):
     """
     Takes in the array of terms from the query
     Returns the posting list of all the phrase
@@ -363,9 +373,9 @@ def parse_boolean_query(terms):
             return []
         res_posting_list = merge_posting_lists(res_posting_list, term_posting_list)
 
-    return get_ranking_for_boolean_query(res_posting_list)
+    return get_ranking_for_boolean_query(res_posting_list, relevant_docids)
 
-def parse_free_text_query(terms):
+def parse_free_text_query(terms, relevant_docids):
     # TODO: See below (delete once done)
     #Expected to add query expansion, after process(query) is done
     #query = query_expansion(process(query))
@@ -404,7 +414,7 @@ def split_query(query):
         current_index += 1
 
     # Add in the last term if it exists
-    if start_index < current_index - 1:
+    if start_index < current_index:
         terms.append(query[start_index:current_index])
 
     # Weed out empty strings
@@ -459,20 +469,13 @@ def run_search(dict_file, postings_file, queries_file, results_file):
     # 2. Process Queries
     with open(queries_file, "r") as q_file:
         with open(results_file, "w") as r_file:
-            for line in q_file:
-                # Each line is a query search
-                # Parse the initial query: filter punctuations, case-folding
-                line = line.rstrip("\n")
-                res = [] # contains all possible Postings for the result of a single line query
-                # try:
-                res = parse_query(line)
-                # except Exception as e:
-                    # print(repr(e), line)
-                    # res = [] # invalid search queries
-
-                # 3. Write the most relevant documents for the current query to storage
-                # in descending score order, then ascending doc_id
-                r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
+            # TODO: Wrap these clause with Try catch block
+            lines = [line.rstrip("\n") for line in q_file.readlines()]
+            query = lines[0]
+            relevant_docids = [int(doc_id) for doc_id in lines[1:]]
+            res = []
+            res = parse_query(query, relevant_docids)
+            r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
     # 4. Cleaning up: close files
     dict_file_fd.close()
