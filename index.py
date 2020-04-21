@@ -14,7 +14,7 @@ from enum import IntEnum
 
 # Self-defined constants, functions and classes
 
-def filter_punctuations(s, keep_quo = False):
+def filter_punctuations(s, keep_quo=False):
     """
     Replaces certain punctuations from Strings with space, to be removed later on
     Takes in String s and returns the processed version of it
@@ -105,8 +105,12 @@ class VSM:
             if i == 0 or term != tokens_list[i-1][0]:
                 # new term
                 self.dictionary[term] = PostingList()
-            # insert into appropriate PostingList
-            self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
+            # Insert into appropriate PostingList
+            # if same term and docID, do not increment PL.size
+            if i > 0 and term == tokens_list[i-1][0] and curr_tuple[0] == tokens_list[i-1][1][0]:
+                self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], False)
+            else:
+                self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
 
         print("Calculating document vector length")
 
@@ -134,7 +138,7 @@ class VSM:
                 # decrease the maxInt value by factor 10
                 # as long as the OverflowError occurs.
                 try:
-                    #csv.field_size_limit(maxInt)
+                    csv.field_size_limit(maxInt)
                     break
                 except OverflowError:
                     maxInt = int(maxInt / 10)
@@ -154,8 +158,8 @@ class VSM:
                     documents.append(document)
                 index += 1
                 # # TODO: Delete
-                #if index == 60:
-                #  break
+                if index == 60:
+                    break
             return documents
 
     def get_documents(self):
@@ -258,7 +262,7 @@ class VSM:
         Document lengths are also written into dictionary file
         All doc_ids are also written into postings file
         """
-        #out_intermediate = open("intermediate.txt", "w", encoding='utf8')  # For debuging purpose, TO DELETE
+        out_intermediate = open("intermediate.txt", "w", encoding='utf8')  # For debuging purpose, TO DELETE
 
         d = {}  # to contain mappings of term to file cursor value
         with open(self.p_file, "wb") as f:
@@ -267,17 +271,17 @@ class VSM:
                 cursor = f.tell()
                 d[word] = cursor # updating respective (term to file cursor value) mappings
                 pickle.dump(posting_list, f, protocol=4)
-                #out_intermediate.write(
-                #    "Word: " + str(word) + " Posting: " + posting_list.generate_string_of_postinglist() + '\n\n')  # For debuging purpose, TO DELETE
+                out_intermediate.write(
+                    "Word: " + str(word) + " Posting: " + posting_list.generate_string_of_postinglist() + '\n\n')  # For debuging purpose, TO DELETE
 
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
             pickle.dump(self.doc_lengths, f)
             pickle.dump(self.docid_set, f)
 
-            #out_intermediate.write("dictionary: " + str(d) + '\n\n')  # For debuging purpose, TO DELETE
-            #out_intermediate.write("docid_set: " + str(self.docid_set) + '\n\n')  # For debuging purpose, TO DELETE
-        #out_intermediate.close()  # For debuging purpose, TO DELETE
+            out_intermediate.write("dictionary: " + str(d) + '\n\n')  # For debuging purpose, TO DELETE
+            out_intermediate.write("docid_set: " + str(self.docid_set) + '\n\n')  # For debuging purpose, TO DELETE
+        out_intermediate.close()  # For debuging purpose, TO DELETE
 
 class Field(IntEnum):
     CONTENT = 1
@@ -315,12 +319,13 @@ class PostingList:
         return self.size
 
     # Insert with var byte encoding
-    def insert(self, doc_id, field, positions):
+    def insert(self, doc_id, field, positions, new_doc_id=True):
         next_id = self.size
         new_posting = Posting(next_id, doc_id, field, positions)
         new_posting.var_byte_encoding()
         self.postings.append(new_posting)
-        self.size += 1
+        if new_doc_id:
+            self.size += 1
 
     def insert_without_encoding(self, doc_id, field, positions):
         next_id = self.size
