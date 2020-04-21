@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# -*- coding: utf-8 -*-
 import re
 import sys
 import getopt
@@ -16,7 +15,7 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 20
+K = 30
 
 def filter_punctuations(s, keep_quo=False):
     """
@@ -71,7 +70,7 @@ class VSM:
     """
     def __init__(self, in_dir, d_file, p_file):
         self.dictionary = {}  # content, title, court
-        self.docid_term_mappings = {} # (doc_id:top K most common terms for that doc_id) mappings
+        self.docid_term_mappings = {} # (doc_id:{top K most common terms:their count} for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
         self.p_file = p_file
@@ -163,23 +162,13 @@ class VSM:
             set_of_documents.append(document)
 
             # To obtain the top K terms for the current document
-            document['top_K'] = []
             accumulate_counts = {}
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['content_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['title_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
             document['top_K'] = Counter(accumulate_counts).most_common(K)
-            for i in range(K):
-                # i must always be smaller than actual_size by 1
-                # accumulate_counts has a possibility of going below K
-                # to avoid null pointer exception, we use < len(accumulate_counts)
-                if (i < len(accumulate_counts)):
-                    document['top_K'][i] = document['top_K'][i][0]
-                else:
-                    break;
-
-            # Now, document['top_K'] will be a list of the top K terms for the document
+            # Now, document['top_K'] will be a dictionary of counts for the top K terms for the document
 
             print(count," Generated positional indexes")
             count += 1
@@ -291,8 +280,8 @@ class VSM:
         Generates entries from a list of positional index
         """
         tokens_list = []
-        for term, positional_indexes in positional_indexes.items():
-            tokens_list.append([term, (doc_id, field_type, positional_indexes)])  # [term, (doc_ID, Field, positional_indexes)]
+        for term, positional_index in positional_indexes.items():
+            tokens_list.append([term, (doc_id, field_type, positional_index)])  # [term, (doc_ID, Field, positional_indexes)]
 
         return tokens_list
 
