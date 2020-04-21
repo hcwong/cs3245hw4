@@ -12,10 +12,10 @@ from collections import Counter, defaultdict
 from encode import encode
 from enum import IntEnum
 
+# Self-defined constants, functions and classes
+
 # For Rocchio Coefficients
 K = 20
-
-# Self-defined constants, functions and classes
 
 def filter_punctuations(s, keep_quo=False):
     """

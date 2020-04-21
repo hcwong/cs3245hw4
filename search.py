@@ -20,7 +20,6 @@ POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
-
 EMPHASIS_ON_ORIG = 0.3 # edit this to change Rocchio co-efficients
 
 def comparator(tup1, tup2):
@@ -120,6 +119,7 @@ def cosine_score(tokens_arr, relevant_docids):
             if posting_list_object is not None:
                 posting_list = posting_list_object.postings
         else:
+            # Otherwise, this term is under freetext search, and we can optimise using Rocchio Algorithm
             query_type = "FREETEXT"
             posting_list = find_term(term)
         # Invalid query terms have no Postings and hence no score contributions;
