@@ -90,13 +90,13 @@ class VSM:
 
         # Step 2: Obtain all possible Postings and sort them by term, then doc_id, then by the required zones/fields
 
-        # Save flattened [term, (doc_ID, Field, position)] entries (of the zone/field positional indexes' PostingLists) in tokens_list for sorting
+        # Save flattened [term, (doc_ID, Field, positional_index)] entries (of the zone/field positional indexes' PostingLists) in tokens_list for sorting
         tokens_list = []
 
         for single_document in set_of_documents:
             # Every document in here is unique and not repeated
             doc_id = single_document['doc_id']
-            # Obtain all [term, (doc_ID, Field, position)] entries
+            # Obtain all [term, (doc_ID, Field, positional_index)] entries
             # Add these into tokens_list for sorting
             tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, single_document['content_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, single_document['title_positional_indexes']))
@@ -106,7 +106,7 @@ class VSM:
             # Note that we can still access
             self.docid_term_mappings[doc_id] = single_document['top_K']
 
-        # Sort the list of [term, (doc_ID, Field, position)] entries
+        # Sort the list of [term, (doc_ID, Field, positional_index)] entries
         tokens_list.sort(key=functools.cmp_to_key(comparator))
 
         # Step 3 (done as part of Step 2): Initialise a mapping of all available doc_ids to their most common terms
@@ -291,8 +291,8 @@ class VSM:
         Generates entries from a list of positional index
         """
         tokens_list = []
-        for term, position in positional_indexes.items():
-            tokens_list.append([term, (doc_id, field_type, position)])  # [term, (doc_ID, Field, position)]
+        for term, positional_indexes in positional_indexes.items():
+            tokens_list.append([term, (doc_id, field_type, positional_indexes)])  # [term, (doc_ID, Field, positional_indexes)]
 
         return tokens_list
 
@@ -310,6 +310,7 @@ class VSM:
 
             # This stores doc_id:total_tf mappings
             tf_overall = {}
+
             # Accumulate the total_tf values
             for posting in posting_list.postings:
                 tf_contribution = len(posting.positions) # tf contribution for current term from current zone/field
