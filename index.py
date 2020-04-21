@@ -70,7 +70,7 @@ class VSM:
     """
     def __init__(self, in_dir, d_file, p_file):
         self.dictionary = {}  # content, title, court
-        self.docid_set = {} # (doc_id:top K most common terms for that doc_id) mappings
+        self.docid_term_mappings = {} # (doc_id:top K most common terms for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
         self.p_file = p_file
@@ -103,7 +103,7 @@ class VSM:
             tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, single_document['date_posted_positional_indexes']))
             # For Rocchio Algo/Query Optimisation later on
             # Note that we can still access
-            self.docid_set[doc_id] = single_document['top_K']
+            self.docid_term_mappings[doc_id] = single_document['top_K']
 
         # Sort the list of [term, (doc_ID, Field, position)] entries
         tokens_list.sort(key=functools.cmp_to_key(comparator))
@@ -171,14 +171,7 @@ class VSM:
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
             document['top_K'] = Counter(accumulate_counts).most_common(K)
-            for i in range(K):
-                # i must always be smaller than actual_size by 1
-                # accumulate_counts has a possibility of going below K
-                # to avoid null pointer exception, we use < len(accumulate_counts)
-                if (i < len(accumulate_counts)):
-                    document['top_K'][i] = document['top_K'][i][0]
-                else:
-                    break;
+            document['top_K'] = [doc[0] for doc in document['top_K'][:accumulate_counts]]
             # Now, document['top_K'] will be a list of the top K terms for the document
 
             print(count," Generated positional indexes")
@@ -335,7 +328,7 @@ class VSM:
     def write(self):
         """
         Writes PostingList objects into postings file and all terms into dictionary file
-        doc_lengths and docid_set are also written into dictionary file
+        doc_lengths and docid_term_mappings are also written into dictionary file
         """
 
         d = {}  # to contain mappings of term to file cursor value
@@ -348,7 +341,7 @@ class VSM:
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
             pickle.dump(self.doc_lengths, f) # document lengths regardless of zone/field types
-            pickle.dump(self.docid_set, f) # (doc_id to K most common terms) mappings
+            pickle.dump(self.docid_term_mappings, f) # (doc_id to K most common terms) mappings
 
 class Field(IntEnum):
     """
