@@ -21,6 +21,8 @@ DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
 
+EMPHASIS_ON_ORIG = 0.3 # edit this to change Rocchio co-efficients
+
 def comparator(tup1, tup2):
     """
     Sorts the 2 tuples by score first, then doc_id in ascending order
@@ -68,14 +70,15 @@ def stem_query(arr):
 
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
-    # court_boost = 3
-    # title_boost = 10
-    # if field == Field.TITLE:
-        # return score * title_boost
-    # elif field == Field.COURT:
-        # return score * court_boost
-    # else:
-        # return score
+    court_boost = 4
+    title_boost = 10
+    if field == Field.TITLE:
+        return score * title_boost
+    elif field == Field.COURT:
+        return score * court_boost
+    else:
+        # no boost to score
+        return score
     return score
 
 def cosine_score(tokens_arr, relevant_docids):
@@ -109,11 +112,15 @@ def cosine_score(tokens_arr, relevant_docids):
         # This is nicely reflected in the term's PostingList
         # Only documents with Postings of this term will have non-zero score contributions
         posting_list = None
+        query_type = "YET DECIDED"
         if " " in term:
+            # The only time we have a space in a term is when the term is one in a phrasal query
+            query_type = "PHRASAL"
             posting_list_object = perform_phrase_query(term)
             if posting_list_object is not None:
                 posting_list = posting_list_object.postings
         else:
+            query_type = "FREETEXT"
             posting_list = find_term(term)
         # Invalid query terms have no Postings and hence no score contributions;
         # in this case we advance to the next query term saving unnecessary operations
@@ -122,9 +129,9 @@ def cosine_score(tokens_arr, relevant_docids):
 
         # 2. Obtain the second vector's (query vector's) value for pointwise multiplication
 
-        query_term_weight = get_query_weight(posting_list.size, term_frequencies[term]) # without Rocchio
+        query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[term]) # without Rocchio
 
-        if (True):
+        if (query_type == "FREETEXT"):
             # Apply Rocchio Algorithm for Query Refinement:
             # ie the weight entry of the term in the refined (aka finalised) query in the term-document matrix
             # Note we treat both the initial query and relevant-marked documents as documents
@@ -140,7 +147,6 @@ def cosine_score(tokens_arr, relevant_docids):
                 accumulated_value += find_term_specific_weight_for_specified_id(doc_id, posting_list)
             relevant_centroid_value = accumulated_value/len(relevant_docids)
 
-            EMPHASIS_ON_ORIG = 0.3
             rocchio_refined_query_value = (EMPHASIS_ON_ORIG * initial_query_value) + ((1-EMPHASIS_ON_ORIG) * relevant_centroid_value)
 
             query_term_weight = rocchio_refined_query_value
@@ -299,8 +305,8 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     Merges list1 and list2 for the AND boolean operator
     """
     merged_list = PostingList()
-    L1 = list1.size
-    L2 = list2.size
+    L1 = list1.unique_docids
+    L2 = list2.unique_docids
     curr1, curr2 = 0, 0
 
     while curr1 < L1 and curr2 < L2:
@@ -494,7 +500,7 @@ def query_expansion(query):
                 syn_set.add(l.name())
         expanded_query.extend(syn_set)
 
-    new_query = ' '.join([str(word.lower()) for word in expanded_query])
+    new_query = ' '.join([str(word).lower() for word in expanded_query])
 
     return new_query
 # Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation

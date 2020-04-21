@@ -12,6 +12,9 @@ from collections import Counter, defaultdict
 from encode import encode
 from enum import IntEnum
 
+# For Rocchio Coefficients
+K = 20
+
 # Self-defined constants, functions and classes
 
 def filter_punctuations(s, keep_quo=False):
@@ -67,7 +70,7 @@ class VSM:
     """
     def __init__(self, in_dir, d_file, p_file):
         self.dictionary = {}  # content, title, court
-        self.docid_set = set() # docID
+        self.docid_set = {} # (doc_id:top K most common terms for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
         self.p_file = p_file
@@ -88,7 +91,9 @@ class VSM:
 
         # Save flattened [term, (doc_ID, Field, position)] entries (of the zone/field positional indexes' PostingLists) in tokens_list for sorting
         tokens_list = []
+
         for single_document in set_of_documents:
+            # Every document in here is unique and not repeated
             doc_id = single_document['doc_id']
             # Obtain all [term, (doc_ID, Field, position)] entries
             # Add these into tokens_list for sorting
@@ -96,12 +101,15 @@ class VSM:
             tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, single_document['title_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, single_document['court_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, single_document['date_posted_positional_indexes']))
+            # For Rocchio Algo/Query Optimisation later on
+            # Note that we can still access
+            self.docid_set[doc_id] = single_document['top_K']
 
         # Sort the list of [term, (doc_ID, Field, position)] entries
         tokens_list.sort(key=functools.cmp_to_key(comparator))
 
-        # Step 3: Get a set of all available doc_ids
-        self.docid_set = set([el['doc_id'] for el in set_of_documents])
+        # Step 3 (done as part of Step 2): Initialise a mapping of all available doc_ids to their most common terms
+        # This is to facilitate query optimisation/refinement later on during search
 
         # Step 4: # Create a PostingList for every single term and fill it up with entries regardless of which zone/field
         # A dictionary will contain all the PostingLists, accessible by the key == term
@@ -124,7 +132,8 @@ class VSM:
                 self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], False)
             else:
                 self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
-            print("nice la")
+
+            print("done with filling up dictionary term PostingLists")
 
         # Step 5: Calculate doc_lengths for normalization
         print("Calculating document vector length")
@@ -136,7 +145,7 @@ class VSM:
     def get_documents(self):
         """
         Returns a list of complete documents which have positional indexes for content, title, court, and date_posted
-        Each complete document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court'
+        Each complete document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court', 'top_K'
         and keys for 4 positional_indexes: 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes', 'date_posted_positional_indexes'
         """
         # Result container for collating all possible dictionary file terms
@@ -154,11 +163,40 @@ class VSM:
             document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
             set_of_documents.append(document)
 
+            # To obtain the top K terms for the current document
+            document['top_K'] = []
+            accumulate_counts = {}
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['content_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['title_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
+            document['top_K'] = Counter(accumulate_counts).most_common(K)
+            for i in range(K):
+                # i must always be smaller than actual_size by 1
+                # accumulate_counts has a possibility of going below K
+                # to avoid null pointer exception, we use < len(accumulate_counts)
+                if (i < len(accumulate_counts)):
+                    document['top_K'].append(document['top_K'][i][0])
+                else:
+                    break;
+            # Now, document['top_K'] will be a list of the top K terms for the document
+
             print(count," Generated positional indexes")
             count += 1
 
         print("Done getting documents")
         return set_of_documents
+
+    def include_count_contribution_from_pos_ind(self, result_counts, pos_ind):
+        """
+        Finds each term's counts in the pos_ind dictionary and reflects this count contribution in the result_counts dictionary
+        """
+        for term in pos_ind:
+            counts = len(pos_ind[term])
+            if term in result_counts:
+                result_counts[term] += counts
+            else:
+                result_counts[term] = counts
 
     def process_file(self):
         with open(self.in_dir, encoding='utf-8') as f:
@@ -283,7 +321,7 @@ class VSM:
             # Since each term has a non-zero tf contribution to give a non-zero length contribution (due to lnc document weighting scheme)
             # to the length of the document vector if the term appears in the document vector,
             # we calculate this length contribution to the document length
-            for id, tf_value in D1.items():
+            for id, tf_value in tf_overall.items():
                 posting_weight = 1 + math.log(tf, 10) # lnc for documents, tf = previously accumulated tf value is guarenteed > 0
                 if id not in self.doc_lengths:
                     self.doc_lengths[id] = posting_weight * posting_weight
@@ -297,7 +335,7 @@ class VSM:
     def write(self):
         """
         Writes PostingList objects into postings file and all terms into dictionary file
-        doc_lengths and docid_setare also written into dictionary file
+        doc_lengths and docid_set are also written into dictionary file
         """
 
         d = {}  # to contain mappings of term to file cursor value
@@ -309,8 +347,8 @@ class VSM:
 
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
-            pickle.dump(self.doc_lengths, f)
-            pickle.dump(self.docid_set, f)
+            pickle.dump(self.doc_lengths, f) # document lengths regardless of zone/field types
+            pickle.dump(self.docid_set, f) # (doc_id to K most common terms) mappings
 
 class Field(IntEnum):
     """
@@ -348,7 +386,7 @@ class PostingList:
         self.postings = []
         self.unique_docids = 0
 
-    def get_size(self):
+    def get_unique_docids(self):
         return self.unique_docids
 
     # Insert with var byte encoding
