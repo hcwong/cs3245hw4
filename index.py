@@ -254,8 +254,8 @@ class VSM:
         Generates a list of processed words from the string it was input with
         """
         sentences = nltk.sent_tokenize(paragraph)
-        words_array = [nltk.word_tokenize(filter_punctuations(s)) for s in sentences]
-        words = [w for arr in words_array for w in arr]
+        words_array = [nltk.word_tokenize(s) for s in sentences]
+        words = [filter_punctuations(w) for arr in words_array for w in arr] # ensure consistency with search.py
         processed_words = self.process_words(words)
         return processed_words
 
