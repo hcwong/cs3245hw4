@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
 import re
 import sys
 import getopt
@@ -168,7 +169,16 @@ class VSM:
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
             document['top_K'] = Counter(accumulate_counts).most_common(K)
-            # Now, document['top_K'] will be a dictionary of counts for the top K terms for the document
+            for i in range(K):
+                # i must always be smaller than actual_size by 1
+                # accumulate_counts has a possibility of going below K
+                # to avoid null pointer exception, we use < len(accumulate_counts)
+                if (i < len(accumulate_counts)):
+                    document['top_K'][i] = document['top_K'][i][0]
+                else:
+                    break;
+
+            # Now, document['top_K'] will be a list of the top K terms for the document
 
             print(count," Generated positional indexes")
             count += 1
