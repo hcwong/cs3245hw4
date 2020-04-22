@@ -43,10 +43,17 @@ def filter_punctuations(s):
     Replaces certain punctuations from Strings with space, to be removed later on
     Takes in String s and returns the processed version of it
     """
-    punctuations = '''!?-;:\\,./#$%^&<>[]{}*_~()'''
+    punctuations = '''!?-;:\\,./#$%^&<>[]{}_~()'''
+    punctuations = '''!?-;:\\,./#$%^&<>[]{}_~(")'''
+
+    space = '''!?-;:\\,./#$%^&<>[]{}_~(")''' # please check if this will interfere with phrasal or not
+    remove = "'"
+
     filtered_term = ""
     for character in s:
-        if character in punctuations:
+        if character in remove:
+            s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+        elif character in space:
             filtered_term += " "
         else:
             filtered_term += character

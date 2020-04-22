@@ -25,16 +25,21 @@ def filter_punctuations(s, keep_quo=False):
     Takes in String s and returns the processed version of it
     Set the 2nd argument to be True to keep quotation marks
     """
-    punct_wo_quo = '''!?-;:\\,./#$%^&<>[]{}*`=@+…-_~()'''
-    punctuations = '''!?-;:\\,./#$%^&<>[]{}*`=@+…"-_~()'''
+    punct_wo_quo = '''!?-;:\\,./#$%^&<>[]{}_~()'''
+    punctuations = '''!?-;:\\,./#$%^&<>[]{}_~(")'''
+    apostrophe = "'"
 
     if keep_quo:
         for character in s:
-            if character in punct_wo_quo:
+            if character in apostrophe:
+                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+            elif character in punct_wo_quo:
                 s = s.replace(character, " ")
     else:
         for character in s:
-            if character in punctuations:
+            if character in apostrophe:
+                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+            elif character in punctuations:
                 s = s.replace(character, " ")
     return s
 
