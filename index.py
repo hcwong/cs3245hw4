@@ -25,9 +25,9 @@ def filter_punctuations(s, keep_quo=False):
     Takes in String s and returns the processed version of it
     Set the 2nd argument to be True to keep quotation marks
     """
-    punct_wo_quo = '''!?-;:\\,./#$%^&<>[]{}_~()'''
-    punctuations = '''!?-;:\\,./#$%^&<>[]{}_~(")'''
-    apostrophe = "'"
+    punct_wo_quo = ''''''
+    punctuations = ''''''
+    apostrophe = ""
 
     if keep_quo:
         for character in s:
