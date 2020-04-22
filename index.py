@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
 import re
 import sys
 import getopt
@@ -14,21 +15,31 @@ from enum import IntEnum
 
 # Self-defined constants, functions and classes
 
+# For Rocchio Coefficients
+K = 20
+
 def filter_punctuations(s, keep_quo=False):
     """
     Replaces certain punctuations from Strings with space, to be removed later on
+    Removes apostrophe
     Takes in String s and returns the processed version of it
+    Set the 2nd argument to be True to keep quotation marks
     """
-    punct_wo_quo = '''!?-;:\\,./#$%^&<>[]{}*`'=@+…’-–—_~()'''
-    punctuations = '''!?-;:"\\,./#$%^&<>[]{}*`'=@+…“”’-–—_~()'''
+    punct_wo_quo = ''''''
+    punctuations = ''''''
+    apostrophe = ""
 
     if keep_quo:
         for character in s:
-            if character in punct_wo_quo:
+            if character in apostrophe:
+                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+            elif character in punct_wo_quo:
                 s = s.replace(character, " ")
     else:
         for character in s:
-            if character in punctuations:
+            if character in apostrophe:
+                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+            elif character in punctuations:
                 s = s.replace(character, " ")
     return s
 
@@ -42,7 +53,8 @@ def comparator(arr1, arr2):
         return -1
     elif arr1[1][0] != arr2[1][0]:  # doc_id
         return arr1[1][0] - arr2[1][0]
-    elif arr1[1][1] != arr2[1][1]:  # Field title -> court -> content
+    # Otherwise, same term & doc_id, differentiate by field: title -> court -> date_posted -> content
+    elif arr1[1][1] != arr2[1][1]:
         if arr2[1][1] == Field.TITLE:
             return 1
         elif arr1[1][1] == Field.TITLE:
@@ -64,7 +76,7 @@ class VSM:
     """
     def __init__(self, in_dir, d_file, p_file):
         self.dictionary = {}  # content, title, court
-        self.docid_set = set() # docID
+        self.docid_term_mappings = {} # (doc_id:{top K most common terms:their count} for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
         self.p_file = p_file
@@ -76,58 +88,127 @@ class VSM:
         These are accessed via .dictionary, .doc_lengths, .doc_ids respectively
         Punctuation handling, tokenisation, case-folding, stemming are applied to generate terms
         """
-        # Step 1: Obtain Postings for material to create VSM in Step 3
+        # Step 1: Obtain a list of all individual documents from the csv input file
+        # Each complete document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court'
+        # and keys for 4 positional_indexes: 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes', 'date_posted_positional_indexes'
         set_of_documents = self.get_documents()
+
+        # Step 2: Obtain all possible Postings and sort them by term, then doc_id, then by the required zones/fields
+
+        # Save flattened [term, (doc_ID, Field, positional_index)] entries (of the zone/field positional indexes' PostingLists) in tokens_list for sorting
         tokens_list = []
 
-        # Save flattened Counter results in tokens_list
-        for res in set_of_documents:
-            doc_id = res['doc_id']
-            # Generate tokens of positional indexes (subsequently form into posting list)
-            tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, res['content_positional_indexes']))
-            tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, res['title_positional_indexes']))
-            tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, res['court_positional_indexes']))
-            tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, res['date_posted_positional_indexes']))
+        for single_document in set_of_documents:
+            # Every document in here is unique and not repeated
+            doc_id = single_document['doc_id']
+            # Obtain all [term, (doc_ID, Field, positional_index)] entries
+            # Add these into tokens_list for sorting
+            tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, single_document['content_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, single_document['title_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, single_document['court_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, single_document['date_posted_positional_indexes']))
+            # For Rocchio Algo/Query Optimisation later on
+            # Note that we can still access
+            self.docid_term_mappings[doc_id] = single_document['top_K']
 
-        tokens_list.sort(key=functools.cmp_to_key(comparator)) # Sorted list of [term, (doc_id, freq_in_doc)] elements
+        # Sort the list of [term, (doc_ID, Field, positional_index)] entries
+        tokens_list.sort(key=functools.cmp_to_key(comparator))
 
-        # Step 2: Get a list of all available doc_ids in ascending order
-        self.docid_set = set([el['doc_id'] for el in set_of_documents])  # Process doc_id into a set
+        # Step 3 (done as part of Step 2): Initialise a mapping of all available doc_ids to their most common terms
+        # This is to facilitate query optimisation/refinement later on during search
 
+        # Step 4: # Create a PostingList for every single term and fill it up with entries regardless of which zone/field
+        # A dictionary will contain all the PostingLists, accessible by the key == term
         print("Generating posting lists")
-
-        # Step 3: Fill up the dictionary with PostingLists of all unique terms
-        # The dictionary maps the term to its PostingList
         for i in range(len(tokens_list)):
+
+            # Extract required information
             curr = tokens_list[i]
             term = curr[0]
-            curr_tuple = curr[1] # (doc_id, Field, freq_in_doc)
+            curr_tuple = curr[1] # (doc_id, Field, positional_index)
+
+            # Create a new PostingList if this is a new term
             if i == 0 or term != tokens_list[i-1][0]:
-                # new term
                 self.dictionary[term] = PostingList()
+
             # Insert into appropriate PostingList
-            # if same term and docID, do not increment PL.size
+            # If same term and docID, do not increment PostingList.size
+            # Therefore, different zones/fields with same doc_id will still count as 1 doc_id in total
             if i > 0 and term == tokens_list[i-1][0] and curr_tuple[0] == tokens_list[i-1][1][0]:
                 self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2], False)
             else:
                 self.dictionary[term].insert(curr_tuple[0], curr_tuple[1], curr_tuple[2])
 
+        # Step 5: Calculate doc_lengths for normalization
         print("Calculating document vector length")
-
-        # Step 4: Calculate doc_lengths for normalization
         self.calculate_doc_length()
 
         for _, posting_list in self.dictionary.items():
             posting_list.generate_skip_list()
 
-    # Read the file in and split by the characters '",'
-    # Processes the data set into an array of cases/documents
-    # Note: This function DOES NOT filter punctuation and lower case
+    def get_documents(self):
+        """
+        Returns a list of complete documents which have positional indexes for content, title, court, and date_posted
+        Each complete document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court', 'top_K'
+        and keys for 4 positional_indexes: 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes', 'date_posted_positional_indexes'
+        """
+        # Result container for collating all possible dictionary file terms
+        set_of_documents = []
+        documents = self.process_file()
+        print("Done processing file")
+
+        # Then we handle the fields: content, title and court (to generate position index)
+        # of 'content_positional_indexes', 'title_positional_indexes' is made from 'title', 'court_positional_indexes'
+        count = 0
+        for document in documents:
+            document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
+            document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
+            document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
+            document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
+            set_of_documents.append(document)
+
+            # To obtain the top K terms for the current document
+            accumulate_counts = {}
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['content_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['title_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
+            document['top_K'] = Counter(accumulate_counts).most_common(K)
+            for i in range(K):
+                # i must always be smaller than actual_size by 1
+                # accumulate_counts has a possibility of going below K
+                # to avoid null pointer exception, we use < len(accumulate_counts)
+                if (i < len(accumulate_counts)):
+                    document['top_K'][i] = document['top_K'][i][0]
+                else:
+                    break;
+
+            # Now, document['top_K'] will be a list of the top K terms for the document
+
+            print(count," Generated positional indexes")
+            count += 1
+
+        print("Done getting documents")
+        return set_of_documents
+
+    def include_count_contribution_from_pos_ind(self, result_counts, pos_ind):
+        """
+        Finds each term's counts in the pos_ind dictionary and reflects this count contribution in the result_counts dictionary
+        """
+        for term in pos_ind:
+            counts = len(pos_ind[term])
+            if term in result_counts:
+                result_counts[term] += counts
+            else:
+                result_counts[term] = counts
+
     def process_file(self):
         with open(self.in_dir, encoding='utf-8') as f:
             """
-            # prevent csv field larger than field limit error
-            csv.field_size_limit(sys.maxsize)
+            Returns a list of documents (aka legal cases) by splitting the csv file into a list of documents
+            Each document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court'
+            Note: This function merely classifies the appropriate fields/zones, and DOES NOT filter punctuation or casefolds to lowercase
+            Note: The documents created are intermediate documents, which are meant to have other values build in them later on in the get_documents function
             """
             # # TODO: Delete?
             # To run csv.field_size_limit(sys.maxsize) LOCALLY
@@ -143,11 +224,13 @@ class VSM:
                 except OverflowError:
                     maxInt = int(maxInt / 10)
 
-            csv_reader = csv.reader(f, delimiter=',')
+            csv_reader = csv.reader(f, delimiter=',') # Read the file in and split by the characters '",'
             documents = []
+
             index = 0
             for row in csv_reader:
                 if index != 0:
+                    # this is a fresh new legal case/document
                     document = {}
                     # Renaming columns here so we cant use csv.DictReader
                     document['doc_id'] = int(row[0].strip(''))
@@ -157,45 +240,13 @@ class VSM:
                     document['court'] = row[4].strip('')
                     documents.append(document)
                 index += 1
-                # # TODO: Delete
-                if index == 60:
-                    break
+
             return documents
-
-    def get_documents(self):
-        # Result container for collating all possible dictionary file terms
-        set_of_documents = []
-        documents = self.process_file()
-        print("Done processing file")
-
-        # Then we handle the fields: content, title and court (to generate position index)
-        # of 'content_positional_indexes', 'title_positional_indexes' is made from 'title', 'court_positional_indexes'
-        count = 0
-        for document in documents:
-            document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
-            document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
-            document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
-            document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
-            set_of_documents.append(document)
-            print(count," Generated positional indexes")
-            count += 1
-
-        print("Done getting documents")
-        return set_of_documents
-
-    def generate_token_list(self, doc_id, field_type, positional_indexes):
-        """
-        Generates token from a list of positional index
-        """
-        tokens_list = []
-        for term, positions in positional_indexes.items():
-            tokens_list.append([term, (doc_id, field_type, positions)])  # [term, (doc_ID, Field, position]
-        return tokens_list
 
     def generate_positional_indexes(self, paragraph):
         """
-        #Generates positional index from a paragraph/string
-        #by using the function generate_list_of_words() and generate_positional_indexes_from_list()
+        Generates a positional index (positions stored via gap encoding) for a field/zone (from its paragraph/string)
+        by using the function generate_list_of_words() and generate_positional_indexes_from_list()
         """
         processed_words = self.generate_list_of_words(paragraph)
         # This is a dictionary of word and the positions it appears in
@@ -207,15 +258,24 @@ class VSM:
         Generates a list of processed words from the string it was input with
         """
         sentences = nltk.sent_tokenize(paragraph)
-        words_array = [nltk.word_tokenize(filter_punctuations(s)) for s in sentences]
-        words = [w for arr in words_array for w in arr]
+        words_array = [nltk.word_tokenize(s) for s in sentences]
+        words = [filter_punctuations(w) for arr in words_array for w in arr] # ensure consistency with search.py
         processed_words = self.process_words(words)
         return processed_words
+
+    def process_words(self, words):
+        """
+        Stems the already lowercase version of the word given and lowercases
+        Takes in the list of Strings and returns their stemmed version in a list
+        """
+        stemmer = nltk.stem.porter.PorterStemmer()
+        return [stemmer.stem(w.lower()) for w in words]
 
     def generate_positional_indexes_from_list(self, words, start_index):
         """
         Generate the positional indexes for the phrasal queries from a list of words
-        Does gap encoding too
+        Positions are stored via gap encoding, so only the first position is the absolute position
+        Subsequent positions are obtained via addition from the previous
         """
         positions = defaultdict(list)
         last_position = {}
@@ -230,60 +290,75 @@ class VSM:
                 last_position[word] = i
         return positions
 
-    def process_words(self, words):
+    def generate_token_list(self, doc_id, field_type, positional_indexes):
         """
-        Stems the already lowercase version of the word given and lowercases
-        Takes in the list of Strings and returns their stemmed version in a list
+        Generates entries from a list of positional index
         """
-        stemmer = nltk.stem.porter.PorterStemmer()
-        return [stemmer.stem(w.lower()) for w in words]
+        tokens_list = []
+        for term, positional_index in positional_indexes.items():
+            tokens_list.append([term, (doc_id, field_type, positional_index)])  # [term, (doc_ID, Field, positional_indexes)]
+
+        return tokens_list
 
     def calculate_doc_length(self):
         """
-        Sets and stores the length of each document for normalization
+        Sets and stores the length of each document for use during normalization
         """
-        self.doc_lengths = {}
         # Iterate through every term of the dictionary, getting its PostingList
-        # to iterate every posting and calculate its contribution to its document's vector length
-        # then, complete calculation for the vector's length
+        # We iterate every posting in the PostingList and calculate its contribution to its document's vector length
+        # This contribution is accumualted, and then square-rooted to find the vector's length, used for normalisation later on
+        self.doc_lengths = {}
         for _, posting_list in self.dictionary.items():
+
+            # This is done at term-level (aka for every term, aka using each PostingList)
+
+            # This stores doc_id:total_tf mappings
+            tf_overall = {}
+
+            # Accumulate the total_tf values
             for posting in posting_list.postings:
-                posting_weight = 1 + math.log(len(posting.positions), 10)
-                if posting.doc_id not in self.doc_lengths:
-                    self.doc_lengths[posting.doc_id] = posting_weight * posting_weight
+                tf_contribution = len(posting.positions) # tf contribution for current term from current zone/field
+                if (posting.doc_id) not in tf_overall:
+                    tf_overall[posting.doc_id] = tf_contribution
                 else:
-                    self.doc_lengths[posting.doc_id] += (posting_weight * posting_weight)
+                    tf_overall[posting.doc_id] += tf_contribution
+
+            # Since each term has a non-zero tf contribution to give a non-zero length contribution (due to lnc document weighting scheme)
+            # to the length of the document vector if the term appears in the document vector,
+            # we calculate this length contribution to the document length
+            for id, tf in tf_overall.items():
+                posting_weight = 1 + math.log(tf, 10) # lnc for documents, tf = previously accumulated tf value is guarenteed > 0
+                if id not in self.doc_lengths:
+                    self.doc_lengths[id] = posting_weight * posting_weight
+                else:
+                    self.doc_lengths[id] += (posting_weight * posting_weight)
+
+        # Square-root to find the vector length
         for doc_id, total_weight in self.doc_lengths.items():
             self.doc_lengths[doc_id] = math.sqrt(total_weight)
 
     def write(self):
         """
         Writes PostingList objects into postings file and all terms into dictionary file
-        Document lengths are also written into dictionary file
-        All doc_ids are also written into postings file
+        doc_lengths and docid_term_mappings are also written into dictionary file
         """
-        out_intermediate = open("intermediate.txt", "w", encoding='utf8')  # For debuging purpose, TO DELETE
 
         d = {}  # to contain mappings of term to file cursor value
         with open(self.p_file, "wb") as f:
-            # pickle.dump(self.doc_ids, f)
             for word, posting_list in self.dictionary.items():
                 cursor = f.tell()
                 d[word] = cursor # updating respective (term to file cursor value) mappings
                 pickle.dump(posting_list, f, protocol=4)
-                out_intermediate.write(
-                    "Word: " + str(word) + " Posting: " + posting_list.generate_string_of_postinglist() + '\n\n')  # For debuging purpose, TO DELETE
 
         with open(self.d_file, "wb") as f:
             pickle.dump(d, f) # (term to file cursor value) mappings dictionary
-            pickle.dump(self.doc_lengths, f)
-            pickle.dump(self.docid_set, f)
-
-            out_intermediate.write("dictionary: " + str(d) + '\n\n')  # For debuging purpose, TO DELETE
-            out_intermediate.write("docid_set: " + str(self.docid_set) + '\n\n')  # For debuging purpose, TO DELETE
-        out_intermediate.close()  # For debuging purpose, TO DELETE
+            pickle.dump(self.doc_lengths, f) # document lengths regardless of zone/field types
+            pickle.dump(self.docid_term_mappings, f) # (doc_id to K most common terms) mappings
 
 class Field(IntEnum):
+    """
+    Represents the possible fields for a document given other than the doc_id
+    """
     CONTENT = 1
     TITLE = 2
     COURT = 3
@@ -291,8 +366,9 @@ class Field(IntEnum):
 
 class Posting:
     """
-    Each Posting has a document id doc_id, term frequency freq,
-    and weight which is its lnc calculation before normalisation
+    Each Posting has a document id (doc_id), field type (field), positional index (positions), and a pointer for possible optimisation
+    Note that term frequency can be obtained by len(positions)
+    Each Posting represents a document for a particular term
     """
     def __init__(self, index, doc_id, field, positions):
         self.doc_id = doc_id
@@ -308,29 +384,29 @@ class Posting:
 
 class PostingList:
     """
-    Each PostingList is for a term, reflecting its term frequency in a number of document(s)
-    A PostingList contains size and Postings, which have doc_id and freq of each term
+    Each PostingList is a collection of Postings for a particular term.
+    A PostingList contains the number of unique documents it contains regardless of which zone/field (size) and a list of Postings (postings)
     """
     def __init__(self):
         self.postings = []
-        self.size = 0  # number of insert / term frequency
+        self.unique_docids = 0
 
-    def get_size(self):
-        return self.size
+    def get_unique_docids(self):
+        return self.unique_docids
 
     # Insert with var byte encoding
     def insert(self, doc_id, field, positions, new_doc_id=True):
-        next_id = self.size
+        next_id = self.unique_docids
         new_posting = Posting(next_id, doc_id, field, positions)
         new_posting.var_byte_encoding()
         self.postings.append(new_posting)
         if new_doc_id:
-            self.size += 1
+            self.unique_docids += 1
 
     def insert_without_encoding(self, doc_id, field, positions):
-        next_id = self.size
+        next_id = self.unique_docids
         self.postings.append(Posting(next_id, doc_id, field, positions))
-        self.size += 1
+        self.unique_docids += 1
 
     def insert_posting(self, posting):
         self.postings.append(posting)
@@ -339,13 +415,13 @@ class PostingList:
         return self.postings[index]
 
     def generate_skip_list(self):
-        skip_distance = math.floor(math.sqrt(self.get_size()))
-        # -1 to prevent reading from invalid index
-        for i in range(self.get_size() - skip_distance - 1):
+        skip_distance = math.floor(math.sqrt(len(self.postings)))
+        # -1 to prevent reading from invalid index, due to 0 indexed lists
+        for i in range(len(self.postings) - skip_distance - 1):
             self.postings[i].pointer = self.postings[i + skip_distance]
 
     def generate_string_of_postinglist(self):
-        s = 'size ' + str(self.size) + '  '
+        s = 'size ' + str(self.unique_docids) + '  '
         for item in self.postings:
             s += item.generate_string_of_posting() + ';'
         return s
