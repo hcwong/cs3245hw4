@@ -31,9 +31,9 @@ def comparator(tup1, tup2):
     Sorts the 2 tuples by score first, then doc_id in ascending order
     """
     if tup1[0] > tup2[0]:
-        return 1
-    elif tup2[0] > tup1[0]:
         return -1
+    elif tup2[0] > tup1[0]:
+        return 1
     else:
         return tup2[1] - tup1[1]
 
