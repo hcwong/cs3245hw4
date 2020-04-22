@@ -42,12 +42,12 @@ def filter_punctuations(s):
     """
     Takes in String s and returns the processed version of it
     Replaces certain punctuations with space, to be removed later on
-    Removes apostrophe.
+    Removes others
     Note: We will never encounter double inverted commas here, as they are already
     removed in identifying phrases for phrasal queries
     """
-    space = '''!?;:\\.*+=_~<>[]{}(-/)'''
-    remove = """'""" # e.g. apostrophe. Add in more if needed
+    space = '''!?;:\\.*+=_~<>[]{}(/)'''
+    remove = """'-""" # e.g. apostrophe. Add in more if needed
 
     # Note: replacing any character with a space will incur a " " term (a space)
     # We remove this space later on in the process function

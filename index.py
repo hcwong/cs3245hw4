@@ -17,18 +17,18 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 20
+K = 18
 
 def filter_punctuations(s, keep_quo=False):
     """
     Takes in String s and returns the processed version of it
     Replaces certain punctuations with space, to be removed later on
-    Removes apostrophe
+    Removes others
     Set the 2nd argument to be True to keep quotation marks
     """
-    space_wo_quo = '''!?;:\\.*+=_~<>[]{}(-/)'''
-    space_w_quo = '''!?;:\\.*+=_~<>[]{}(-/")''' # same as space_wo_quo but now has ' " ' inside
-    remove = """'""" # e.g. apostrophe. Add in more if needed
+    space_wo_quo = '''!?;:\\.*+=_~<>[]{}(/)'''
+    space_w_quo = '''!?;:\\.*+=_~<>[]{}(/")''' # same as space_wo_quo but now has ' " ' inside
+    remove = """-'""" # e.g. apostrophe. Add in more if needed
 
     # Note: replacing any character with a space will incur a " " term (a space)
     # We remove this space in the generate_list_of_words function
