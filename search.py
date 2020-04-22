@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import re
 import nltk
 import sys
@@ -22,7 +24,7 @@ ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
 EMPHASIS_ON_ORIG = 1.0 # initial query
 EMPHASIS_ON_RELDOC = 0.75 # relevant marked documents
-EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING = 1.5
+EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING = 1.1
 
 def comparator(tup1, tup2):
     """
@@ -105,9 +107,12 @@ def cosine_score(tokens_arr, relevant_docids):
     # Reminder: They are ALREADY PROCESSED aka filtered for punctuations, casefolded to lowercase, stemmed
     union_of_relevant_doc_top_terms = []
     for impt in relevant_docids:
-        union_of_relevant_doc_top_terms.append(ALL_DOC_IDS[impt])
+        ls = ALL_DOC_IDS[impt]
+        for t in ls:
+            union_of_relevant_doc_top_terms.append(t)
     processed_terms = [stem_word(w.strip().lower()) for w in tokens_arr]
-    union_of_relevant_doc_top_terms.append(processed_terms)
+    for t in processed_terms:
+        union_of_relevant_doc_top_terms.append(t)
     union_of_relevant_doc_top_terms = set(union_of_relevant_doc_top_terms) # all unique now, all are processed
 
     # Step 2: Obtain PostingList of interest
@@ -155,9 +160,7 @@ def cosine_score(tokens_arr, relevant_docids):
             if (relevant_centroid_value > 0):
                 # most of the time, it should arrive at this branch
                 query_term_weight = (EMPHASIS_ON_ORIG * query_term_weight) + (EMPHASIS_ON_RELDOC * relevant_centroid_value)
-            else:
-                # better off without, or error in Rocchio Algo value
-                query_term_weight = initial_query_value
+                # Otherwise, we don't change query_term_weight as it is better off without, or error in Rocchio Algo value
 
         # Step 4: Perform scoring by pointwise multiplication for the 2 vectors
         # Accumulate all score contribution from the current term before normalisation for lnc.ltc scheme
@@ -178,8 +181,8 @@ def cosine_score(tokens_arr, relevant_docids):
         # for terms that have not been covered, but need to be considered by Rocchio
         while (len(union_of_relevant_doc_top_terms) > 0):
 
-            # keep finding terms to do scoring until empty; removal by .pop(0)
-            next_term = union_of_relevant_doc_top_terms.pop(0)
+            # keep finding terms to do scoring until empty; removal by .pop()
+            next_term = union_of_relevant_doc_top_terms.pop()
 
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
