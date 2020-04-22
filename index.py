@@ -21,9 +21,9 @@ K = 20
 
 def filter_punctuations(s, keep_quo=False):
     """
-    Replaces certain punctuations from Strings with space, to be removed later on
-    Removes apostrophe
     Takes in String s and returns the processed version of it
+    Replaces certain punctuations with space, to be removed later on
+    Removes apostrophe
     Set the 2nd argument to be True to keep quotation marks
     """
     space_wo_quo = '''!?;:\\.*+=_~<>[]{}(-/)'''
