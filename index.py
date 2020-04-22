@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+
 import re
 import sys
 import getopt
@@ -16,31 +17,34 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 20
+K = 18
 
 def filter_punctuations(s, keep_quo=False):
     """
-    Replaces certain punctuations from Strings with space, to be removed later on
-    Removes apostrophe
     Takes in String s and returns the processed version of it
+    Replaces certain punctuations with space, to be removed later on
+    Removes others
     Set the 2nd argument to be True to keep quotation marks
     """
-    punct_wo_quo = ''''''
-    punctuations = ''''''
-    apostrophe = ""
+    space_wo_quo = '''!?;:\\.*+=_~<>[]{}(/)'''
+    space_w_quo = '''!?;:\\.*+=_~<>[]{}(/")''' # same as space_wo_quo but now has ' " ' inside
+    remove = """-'""" # e.g. apostrophe. Add in more if needed
+
+    # Note: replacing any character with a space will incur a " " term (a space)
+    # We remove this space in the generate_list_of_words function
 
     if keep_quo:
         for character in s:
-            if character in apostrophe:
-                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
-            elif character in punct_wo_quo:
-                s = s.replace(character, " ")
+            if character in remove:
+                s = s.replace(character, "") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
+            elif character in space_wo_quo:
+                s = s.replace(character, " ") # will keep double inverted commas
     else:
         for character in s:
-            if character in apostrophe:
-                s = s.replace(character,"") # eg Arnold's Fried Chicken -> Arnolds Fried Chicken (more relevant) VS Arnold s Fried Chicken
-            elif character in punctuations:
-                s = s.replace(character, " ")
+            if character in remove:
+                s = s.replace(character, "")
+            elif character in space_w_quo:
+                s = s.replace(character, " ") # will remove double inverted commas
     return s
 
 def comparator(arr1, arr2):
@@ -260,6 +264,7 @@ class VSM:
         sentences = nltk.sent_tokenize(paragraph)
         words_array = [nltk.word_tokenize(s) for s in sentences]
         words = [filter_punctuations(w) for arr in words_array for w in arr] # ensure consistency with search.py
+        words = [w for w in words if w != " "]
         processed_words = self.process_words(words)
         return processed_words
 
