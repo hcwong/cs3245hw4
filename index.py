@@ -15,7 +15,7 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 30
+K = 23
 
 def filter_punctuations(s, keep_quo=False):
     """
