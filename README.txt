@@ -86,13 +86,20 @@ eventually updating document scores for all documents that contain terms once in
 8. Finally, we will perform normalisation on the lnc.ltc scores obtained from all the above score contributions, and perform some post-processing to emphasise documents
 which contain terms in the initial query. Documents which are relevant will therefore be shown with the highest scores first.
 
+
 2. Boolean queries
 
-Meanwhile, for boolean queries, <Please fill in info about boolean query here :) >
+Meanwhile, for boolean queries, only "AND" operatore are supported. Hence, "AND" operation is conducted on all the words/phrases that appear in boolean query. 
+Firstly, all "AND" keyword are removed from the query. Similiarly, we process the words/phrases into final index terms by filtering through punctuations. We then obtain 
+the postinglist for the word/phrase. 
 
-...
-...
-					<<<< HERE ASKASKAKSDKFDJKSJDKJ >>>>
+It is to note that when processing phrases, because gap encoding is used to store the position of the posting, we would need to add the previous values to obtain the 
+actual positional index. Then, the actual positional indexes are compared to ensure that the query terms are next to each other.
+
+Once the postinglist for the word/phrase is obtained, they are then merged to obtain a postinglists where all the query terms appears in the listed document. 
+The final posting list are then ranked. Scores are added for every query term present in the document. The score are dependent on which field the term appears in. 
+Terms that are the doc_id have higher score, followed by title, court then content. After the scores are tallied, the document with the highest score are placed first in the output.
+
 
 
 EXPERIMENTS
