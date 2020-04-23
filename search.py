@@ -182,6 +182,7 @@ def cosine_score(tokens_arr, relevant_docids):
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
+                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
@@ -247,11 +248,12 @@ def obtain_all_cos_score_terms(relevant_docids, tokens_arr):
     res = []
     for impt in relevant_docids:
         ls = ALL_DOC_IDS[impt]
-        for t in ls:
+        for t in ls[:5] if len(ls) > 5 else ls:
             res.append(t)
     processed_terms = [stem_word(w.strip().lower()) for w in tokens_arr]
     for t in processed_terms:
         res.append(t)
+    res = [filtered_term for filtered_term in res if filtered_term.isalnum()]
     return set(res) # all unique now, all are processed
 
 def remove_term_processed_from_set(term, union_of_relevant_doc_top_terms):
@@ -616,6 +618,10 @@ def run_search(dict_file, postings_file, queries_file, results_file):
             res = []
 
             res = parse_query(query, relevant_docids)
+
+            if len(res) < 5:
+                print(query, "Somethings off here boss")
+            res.append(("debug", query))
 
             r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
