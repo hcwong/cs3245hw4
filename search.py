@@ -449,16 +449,19 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
     Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
     Then the resultant score is 11
     """
-    relevant_score = 100000
-    title_score = 20
-    court_score = 10
-    content_score = 1
+    relevant_score = 50
+    title_score = 5
+    court_score = 4
+    date_score = 3
+    content_score = 2
 
     def get_boolean_query_scores(field):
         if field == Field.TITLE:
             return title_score
         elif field == Field.COURT:
             return court_score
+        elif field == Field.DATE_POSTED:
+            return date_score
         else:
             return content_score
 
@@ -466,13 +469,13 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
     for posting in posting_list.postings:
         score = get_boolean_query_scores(posting.field)
         if posting.doc_id not in scores:
-            scores[posting.doc_id] = score
+            scores[posting.doc_id] = len(posting.positions) * score
         else:
-            scores[posting.doc_id] += score
+            scores[posting.doc_id] += len(posting.positions) * score
 
     # Add to the ones judged relevant by humans
     for relevant_docid in relevant_docids:
-        if relevant_docid in scores:
+        if relevant_docid not in scores:
             scores[relevant_docid] = relevant_score
         else:
             scores[relevant_docid] += relevant_score
