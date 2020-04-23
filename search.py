@@ -464,10 +464,10 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
     Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
     Then the resultant score is 6k
     """
-    title_score = 5000
-    court_score = 4000
-    content_score = 2000
-    date_score = 1000
+    title_score = 5000000
+    court_score = 4000000
+    content_score = 2000000
+    date_score = 100000
 
     def get_boolean_query_scores(field):
         if field == Field.TITLE:
