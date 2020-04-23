@@ -108,6 +108,11 @@ We have quite a few arbitrary values:
 We have played around and varied them to try to optimise our search results, but due to the limited number of times that the leaderboards is generated (because it takes
 rather long to generate), these values may not be the most optimal. Still, we have tried on our end to find optimal values.
 
+Workload
+
+The team split work objectively, with one person working on overall architecture (such as the functional skeleton), one on Rocchio Algorithm, one on Query Expension via
+Manual Thesaurus, and one on documentation. Moreover, we overlap and check on one anothers' parts.
+
 == Files included with this submission ==
 
 index.py - the file to initiate indexing
