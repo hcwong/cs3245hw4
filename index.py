@@ -69,6 +69,10 @@ def comparator(arr1, arr2):
             return 1
         elif arr1[1][1] == Field.COURT:
             return -1
+        elif arr2[1][1] == Field.DATE_POSTED:
+            return 1
+        elif arr1[1][1] == Field.DATE_POSTED:
+            return -1
     else:
         return 0
 
@@ -77,7 +81,7 @@ class VSM:
     Represents the Vector Space Model
     """
     def __init__(self, in_dir, d_file, p_file):
-        self.dictionary = {}  # content, title, court
+        self.dictionary = {}  # content, title, court, date_posted
         self.docid_term_mappings = {} # (doc_id:{top K most common terms:their count} for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
@@ -111,6 +115,7 @@ class VSM:
             tokens_list.extend(self.generate_token_list(doc_id, Field.CONTENT, single_document['content_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.TITLE, single_document['title_positional_indexes']))
             tokens_list.extend(self.generate_token_list(doc_id, Field.COURT, single_document['court_positional_indexes']))
+            tokens_list.extend(self.generate_token_list(doc_id, Field.DATE_POSTED, single_document['date_posted_positional_indexes']))
             # For Rocchio Algo/Query Optimisation later on
             # Note that we can still access
             self.docid_term_mappings[doc_id] = single_document['top_K']
@@ -151,26 +156,27 @@ class VSM:
         """
         Returns a list of complete documents which have positional indexes for content, title, court, and date_posted
         Each complete document is represented by a dictionary with keys: 'doc_id', 'title', 'content', 'date_posted', 'court', 'top_K'
-        and keys for 4 positional_indexes: 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes'
+        and keys for 4 positional_indexes: 'content_positional_indexes', 'title_positional_indexes', 'court_positional_indexes', 'date_posted_positional_indexes'
         """
         # Result container for collating all possible dictionary file terms
         set_of_documents = []
         documents = self.process_file()
         print("Done processing file")
 
-        # Then we handle the fields: content, title and court (to generate position index)
-        # of 'content_positional_indexes', 'title_positional_indexes' is made from 'title', 'court_positional_indexes'
+        # Then we handle the fields: content, title and date_posted and court (to generate position index)
         count = 0
         for document in documents:
             document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
             document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
             document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
+            document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
 
             # To obtain the top K terms for the current document
             accumulate_counts = {}
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['content_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['title_positional_indexes'])
             self.include_count_contribution_from_pos_ind(accumulate_counts, document['court_positional_indexes'])
+            self.include_count_contribution_from_pos_ind(accumulate_counts, document['date_posted_positional_indexes'])
             document['top_K'] = Counter(accumulate_counts).most_common(K)
             for i in range(K):
                 # i must always be smaller than actual_size by 1
@@ -363,6 +369,7 @@ class Field(IntEnum):
     CONTENT = 1
     TITLE = 2
     COURT = 3
+    DATE_POSTED = 4
 
 class Posting:
     """
