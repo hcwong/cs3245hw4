@@ -132,8 +132,6 @@ def cosine_score(tokens_arr, relevant_docids):
         if " " in term:
             query_type = "PHRASAL"
             posting_list_object = perform_phrase_query(term) # do merging of PostingLists
-            if posting_list_object is not None:
-                posting_list = posting_list_object.postings
         else:
             query_type = "FREETEXT"
             posting_list = find_term(term)
@@ -147,7 +145,7 @@ def cosine_score(tokens_arr, relevant_docids):
 
         # Query Refinement: Rocchio Algorithm (Part 1: common terms with query)
         # Want to use given relevant documents to get entry of the term in the refined query vector
-        if (query_type == "FREETEXT"):
+        if (query_type == "FREETEXT") and (len(relevant_docids) != 0):
             # We are doing query refinement for this current term; no need to do again later: remove it first!
             # current term is not processed -> Need to process first to compare
             remove_term_processed_from_set(term, union_of_relevant_doc_top_terms)
@@ -173,7 +171,7 @@ def cosine_score(tokens_arr, relevant_docids):
     # Step 5 (Optional): Rocchio Part 2 (if needed; for terms in overall top_K yet to be considered)
     # We begin with an initial query vector value of 0. And then we add the averaged lawyer-marked-relevant documents' 'centroid' value
     # Note the terms here are already processed; we need to use find_already_processed_term(term) function
-    if (is_entirely_phrasal == False):
+    if (is_entirely_phrasal == False) and len(relevant_docids) != 0:
         # for terms that have not been covered, but need to be considered by Rocchio
         while (len(union_of_relevant_doc_top_terms) > 0):
 
