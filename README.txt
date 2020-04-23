@@ -17,6 +17,8 @@ to obtain a dictionary representation for all documents, and store all documents
 accumulate the counts and identify the top K (K is an arbitrary number specified at the top of the index.py file) and store them in the last dictionary entry 
 document[top_K] for every document. This is to facilitate Rocchio Algorithm Query Refinement later on during searches.
 
+To save on indexing space, we also employ gap encoding and variable byte encoding for positional indices. We first gap encode everything, afterwards using an external file to do variable byte encoding.
+
 Once the set_of_documents contains all documents, we accumulate in tokens_list all the positional indexes for each term, regardless of which zone/field it 
 appears as. The tokens_list is sorted by term, then doc_id, then by title, court, date_posted, and finally content. Once we have all this information sorted,
 we can now begin creating PostingLists for each term and fill them up with their relevant Postings. Note that here, all Postings are stored in the 
@@ -90,17 +92,24 @@ which contain terms in the initial query. Documents which are relevant will ther
 2. Boolean queries
 
 Meanwhile, for boolean queries, only "AND" operatore are supported. Hence, "AND" operation is conducted on all the words/phrases that appear in boolean query. 
+
 Firstly, all "AND" keyword are removed from the query. Similiarly, we process the words/phrases into final index terms by filtering through punctuations. We then obtain 
 the postinglist for the word/phrase. 
 
 It is to note that when processing phrases, because gap encoding is used to store the position of the posting, we would need to add the previous values to obtain the 
 actual positional index. Then, the actual positional indexes are compared to ensure that the query terms are next to each other.
+The merging of the positions is done as per the lecture, where we look for terms that have position +1 of the original query.
 
-Once the postinglist for the word/phrase is obtained, they are then merged to obtain a postinglists where all the query terms appears in the listed document. 
+For the purposes of this project, we only merge the positions if the fields and the doc_id of the Posting is the same, due to the way we calculated positional indices in the first step
+
+Once the postinglist for the word/phrase is obtained, they are then merged to obtain a posting lists where all the query terms appears in the listed document. 
 The final posting list are then ranked. Scores are added for every query term present in the document. The score are dependent on which field the term appears in. 
 Terms that are the doc_id have higher score, followed by title, court then content. After the scores are tallied, the document with the highest score are placed first in the output.
 
-
+However, because of the nature of intersection operations, it is highly likely that we will not get any results from the strict boolean query.
+This problem is further compounded by Prof Jin's post on forum that the boolean match must be exact. 
+Hence, we use the relevant doc ids provided by the judge and apply Rocchio on them to get a list of likely documents that match it.
+We weight these documents less than any boolean result, as the boolean result is likely to be rarer, so to speak. We merge the boolean and Rocchio results and return it accordingly.
 
 EXPERIMENTS
 
@@ -125,6 +134,7 @@ index.py - the file to initiate indexing
 search.py - the file containing rules on how to perform each search
 dictionary.txt - the generated dictionary containing the term to file cursor of PostingList mappings, all document lengths, and the term to top K term mappings.
 postings.txt - the file containing all the PostingLists for all the terms
+encode.py - This is the external file we use to do variable byte encoding. The source is acknowledged at the top of the file
 BONUS.docx - the file containing explanation on our query expansion/refinement techniques
 
 == Statement of individual work ==
@@ -144,4 +154,4 @@ experimental) that will give different ranking results.
 
 == References ==
 
-Not Applicable
+https://github.com/utahta/pyvbcode/blob/master/vbcode.py - Variable byte encoding code
