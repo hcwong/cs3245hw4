@@ -190,7 +190,6 @@ def cosine_score(tokens_arr, relevant_docids):
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
-                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
