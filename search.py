@@ -551,7 +551,7 @@ def parse_free_text_query(terms, relevant_docids):
         if posting_list is None:
             continue
 
-        if not(is_phrasal_query):
+        if not is_phrasal_query:
             query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[t])
             if query_term_weight >= 1.2 :
                 expanded_terms.extend(query_expansion(t, terms))
