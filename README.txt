@@ -49,15 +49,9 @@ queries, we classify them (by default as free-text, otherwise with whatever it i
 
 1. Free-text queries
 
-<<<<<<< HEAD
 For free-text queries, query expansion is implemented. We first take in the list of words/phrases in the query terms and measure the query term weight of 
 each individual words/phrases. If the weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion
 on every word and phrases, and only to be done on the important words. Once the query is expanded, the list of words/phreases are then processed.
-=======
-For free-text queries, query expansion is implemented. We first take in the list of words in the query terms and measure the query term weight of each individual words/
-phrases. If the query term weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion on every word, and only
-to be done on the important words. Once the query is expanded, the list of words/phrases are then processed. 
->>>>>>> afe9620a8742a11e5648b1f8969218f0876cae0d
 
 We process the words/phrases into final index terms by filtering through punctuations and removing some of them like apostrophes. As 
 this process can possibly generate additional unneeded spaces, we will then remove these unnecessary spaces to prevent them from being detected as a term. Next, 
