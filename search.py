@@ -81,15 +81,17 @@ def stem_query(arr):
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
     court_boost = 1.3
+    date_boost = 1.5
     title_boost = 2
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:
         return score * court_boost
+    elif field == Field.DATE_POSTED:
+        return score * date_boost
     else:
         # no boost to score
         return score
-    return score
 
 def cosine_score(tokens_arr, relevant_docids):
     """
@@ -288,9 +290,11 @@ def get_query_weight(df, tf):
     We use ltc in the calculation for queries, as opposed to lnc for documents
     This requires document frequency df, term frequency tf, total number of documents N
     """
+    if (tf == 0 or df == 0):
+        return 0
+
     N = len(ALL_DOC_IDS)
     # df, tf and N are all guranteed to be at least 1, so no error is thrown here
-
     return (1 + math.log(tf, 10)) * math.log(N/df, 10)
 
 def find_term(term):
