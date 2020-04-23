@@ -22,9 +22,12 @@ POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
+
+# Optimisation values
 EMPHASIS_ON_ORIG = 1.0 # initial query
 EMPHASIS_ON_RELDOC = 0.75 # relevant marked documents
 EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING = 1.1
+# Note there are also zone/field specific multipliers in some of the respective functions below
 
 def comparator(tup1, tup2):
     """
@@ -80,9 +83,9 @@ def stem_query(arr):
 
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
-    court_boost = 1.3
-    date_boost = 1.5
-    title_boost = 2
+    court_boost = 1.5
+    date_boost = 2
+    title_boost = 4
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:
@@ -187,7 +190,6 @@ def cosine_score(tokens_arr, relevant_docids):
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
-                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
@@ -648,7 +650,7 @@ def run_search(dict_file, postings_file, queries_file, results_file):
 
             if len(res) < 5:
                 print(query, "Somethings off here boss")
-            res.append(("debug", query))
+                res.append(("debug", query))
 
             r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
