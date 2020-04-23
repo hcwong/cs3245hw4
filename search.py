@@ -190,6 +190,7 @@ def cosine_score(tokens_arr, relevant_docids):
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
+                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
@@ -541,11 +542,12 @@ def parse_free_text_query(terms, relevant_docids):
         # this is the same way posting list for individual phrases/words have been obtained in cosine_score
         # Weight for individual queries needs to be measured here as well in order to check which quey words/ phrases are the more important ones and
         # are worth expanding
+
+        #We are assuming free-text queries will not include phrasal queries (ie. phrases incased in " ")
         if " " in t:
             posting_list = perform_phrase_query(t)
         else:
             posting_list = find_term(t)
-
         if posting_list is None:
             continue
 
