@@ -80,8 +80,8 @@ def stem_query(arr):
 
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
-    court_boost = 4
-    title_boost = 10
+    court_boost = 1.3
+    title_boost = 2
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:

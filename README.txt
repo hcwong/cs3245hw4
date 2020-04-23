@@ -6,14 +6,6 @@ We're using Python Version 3.6.8 for this assignment.
 
 == General Notes about this assignment ==
 
-					<Delete this once done >>>
-
-				Give an overview of your program, describe the important algorithms/steps 
-				in your program, and discuss your experiments in general.  A few paragraphs 
-				are usually sufficient.
-
-					<<< ^^this one^^ >>>
-
 ***INDEXING PHASE***
 
 During the indexing phase, we firstly read the single csv file to separate it into individual legal documents. These individual documents are represented by
@@ -44,22 +36,27 @@ top K most common terms, which will be used for optimisation. We will then parse
 Firstly, the parse_query function takes in the query and calls split_query to obtain words to process into terms later on. This process also determines the search 
 type. Here, in split_query, we are splitting the original query given from the query file into either words of length 1, or phrases (identified by double 
 inverted commas in a phrasal query). In the process, if we encounter the Boolean Retrival keyword "AND", we know this is a boolean query and set is_boolean_query 
-to True. Otherwise, we will process this term in a free-text query. Please note that phrasal queries can be performed in both boolean and free-text queries. A 
-phrasal query can easily be identified by spaces (" ") in its term, because split_query produces the respective phrases whenever it encounters the double inverted 
-commas. At the end of this function, we will have a sequence of words and phrases. Once done, the free-text or boolean query is then executed.
-
-Note: Phrasal queries are done by finding PostingLists for each individual term, and then performing an AND merge. This way, we are able to get the final documents
-containing all the terms in the phrase.
+to True. Otherwise, we will process this term in a free-text query. Please note that phrasal queries will be performed as part of processing either boolean 
+and/or free-text queries (otherwise, we will assume it is a free-text query first, then process it as a phrasal query). A phrasal query can easily be 
+identified by spaces (" ") in its term, because split_query produces the respective phrases whenever it encounters the double inverted commas. At the end of
+this function, we will have a sequence of words and phrases. Once done, the free-text or boolean query (which contains any phrasal queries) is then executed.
 
 DIFFERENT TYPES OF SEARCH QUERIES:
 
-For free-text queries, query expansion is implemented. We first take in the list of words/ phrases in the query terms and measure the query term weight of each individual words/
-phrases. If the weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion on every word and phrases, and only
-to be done on the important words. Once the query is expanded, the list of words/phreases are then processed.
+Note: Phrasal queries are done by finding PostingLists for each individual term, and then performing an AND merge. This way, we are able to get the final 
+documents containing all the terms in the phrase. In our program, since phrasal queries may occur in a mixture of queries with free-text queries or boolean
+queries, we classify them (by default as free-text, otherwise with whatever it is in a mixture of queries with) and run them together with those queries.
 
-We process the words/phrases into final index terms by filtering through punctuations and removing some of them like apostrophes. As 
-this process can possibly generate additional unneeded spaces, we will then remove these unnecessary spaces to prevent them from being detected as a term. Next, 
-we will perform scoring and ranking, and possibly query refinement via the Rocchio Algorithm if needed. Note that here, we have knowledge of the documents that the
+
+1. Free-text queries
+
+For free-text queries, query expansion is implemented. We first take in the list of words/ phrases in the query terms and measure the query term weight of 
+each individual words/phrases. If the weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion
+on every word and phrases, and only to be done on the important words. Once the query is expanded, the list of words/phreases are then processed.
+
+We process the words/phrases into final index terms by filtering through punctuations and removing some of them like apostrophes. As this process can 
+possibly generate additional unneeded spaces, we will then remove these unnecessary spaces to prevent them from being detected as a term. Next, we will 
+perform scoring and ranking, and possibly query refinement via the Rocchio Algorithm if needed. Note that here, we have knowledge of the documents that the
 law expert marked as relevant, so we can perform the query refinement for free-text queries which are not entirely phrasal queries.
 
 To facilitate the Rocchio Algorithm, we use the previously obtained list of top K most common terms of each relevant-marked document, and obtain their union, along
@@ -90,6 +87,8 @@ eventually updating document scores for all documents that contain terms once in
 8. Finally, we will perform normalisation on the lnc.ltc scores obtained from all the above score contributions, and perform some post-processing to emphasise documents
 which contain terms in the initial query. Documents which are relevant will therefore be shown with the highest scores first.
 
+2. Boolean queries
+
 Meanwhile, for boolean queries, <Please fill in info about boolean query here :) >
 
 ...
@@ -97,20 +96,25 @@ Meanwhile, for boolean queries, <Please fill in info about boolean query here :)
 					<<<< HERE ASKASKAKSDKFDJKSJDKJ >>>>
 
 
-== Files included with this submission ==
+EXPERIMENTS
 
-List the files in your submission here and provide a short 1 line
-description of each file.  Make sure your submission's files are named
-and formatted correctly.
+We have quite a few arbitrary values: 
+- K (index.py) determines how many most common terms of a document do we store in the index, which will then affect how many terms we will use for the Rocchio Algorithm
+- EMPHASIS_ON_ORIG (search.py) determines how much emphasis we place on the original query's value for a particular term's score in the Rocchio Algorithm
+- EMPHASIS_ON_RELDOC (search.py) determines how much emphasis we place on the relevant-marked documents for a particular term's score in the Rocchio Algorithm
+- EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING multiplies the score for terms that appear in the original query, which we understand to be more significant
+- There are also multipliers for the type of field/zone that the term appears in, which affects the score contribution of these Postings for their associated document.
+
+We have played around and varied them to try to optimise our search results, but due to the limited number of times that the leaderboards is generated (because it takes
+rather long to generate), these values may not be the most optimal. Still, we have tried on our end to find optimal values.
+
+== Files included with this submission ==
 
 index.py - the file to initiate indexing
 search.py - the file containing rules on how to perform each search
 dictionary.txt - the generated dictionary containing the term to file cursor of PostingList mappings, all document lengths, and the term to top K term mappings.
 postings.txt - the file containing all the PostingLists for all the terms
-
-
-BONUS.docx - PLEASE EXPLAIN HEREREREIJDIFSJKDJKLAJDFLKJADNFOWLIJDNFIOLKJDNOL ASKASKASKASKASKS <<<<<<<<<<<<<<<<<<<<< Someone do this pls, we deserve it >:)
-
+BONUS.docx - the file containing explanation on our query expansion/refinement techniques
 
 == Statement of individual work ==
 
@@ -122,11 +126,11 @@ In particular, we expressly vow that we have followed the Facebook rule in
 discussing with others in doing the assignment and did not take notes (digital or
 printed) from the discussions.  
 
-I suggest that I should be graded as follows:
+We suggest that we should be graded as follows:
 
-<Please fill in> ---------------------------------------------------------<<<<<<<<<<<< This one also, if we even need to do this???
+We suggest that we should be marked more with regard to our actual techniques, and not so much on the arbitrary values we chose (which are largely 
+experimental) that will give different ranking results.
 
 == References ==
 
-<Please list any websites and/or people you consulted with for this ----------------------<<<<< This too!
-assignment and state their role>
+Not Applicable
