@@ -126,7 +126,7 @@ def cosine_score(tokens_arr, relevant_docids):
 
 
     # Step 2: Obtain PostingList of interest
-    is_entirely_phrasal = True # if False, should perform Rocchio for Query Refinement
+    is_entirely_phrasal = False # if False, should perform Rocchio for Query Refinement
     for term in tokens_arr:
         # Document IDs and zone/field types are nicely reflected in the term's PostingList
         # Only documents with Postings (regardless of zone/field type) of this term will have non-zero score contributions
@@ -139,6 +139,7 @@ def cosine_score(tokens_arr, relevant_docids):
         if " " in term:
             query_type = "PHRASAL"
             posting_list = perform_phrase_query(term) # do merging of PostingLists
+            is_entirely_phrasal = True
 
         else:
             query_type = "FREETEXT"
@@ -418,24 +419,15 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 curr2 += 1
             # Case 2: posting1's field smaller than posting2's field
             elif posting1.field < posting2.field:
-                # TODO: To prove but I think this hunch is correct
-                # There should not be a case where posting2 has the same field but has merged it in previously.
-                # This insert should never be a duplicate
-                merged_list.insert_posting(posting1)
+                if not should_perform_merge_positions:
+                    merged_list.insert_posting(posting1)
                 curr1 += 1
             # Case 3: Converse of case 2
             else:
-                merged_list.insert_posting(posting2)
+                if not should_perform_merge_positions:
+                    merged_list.insert_posting(posting2)
                 curr2 += 1
         else:
-            # Else if there is a opportunity to jump and the jump is less than the doc_id of the other list
-            # then jump, which increments the index by the square root of the length of the list
-            # if posting1.pointer != None and posting1.pointer.doc_id < posting2.doc_id:
-                # curr1 = posting1.pointer.index
-            # elif posting2.pointer != None and posting2.pointer.doc_id < posting1.doc_id:
-                # curr2 = posting2.pointer.index
-            # # If we cannot jump, then we are left with the only option of incrementing the indexes one by one
-            # else:
             if posting1.doc_id < posting2.doc_id:
                 curr1 += 1
             else:
@@ -445,23 +437,37 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
 def parse_query(query, relevant_docids):
     terms_array, is_boolean_query = split_query(query)
     if is_boolean_query:
-        return parse_boolean_query(terms_array, relevant_docids)
+        # Get the boolean results and then apply rocchio on the relevant documents
+        # Merge their results and output accordingly according to the comparator function
+        boolean_results = parse_boolean_query(terms_array, relevant_docids)
+        rocchio_results = parse_free_text_query([], relevant_docids)
+        merged_scores = {}
+        for score, doc_id in boolean_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        for score, doc_id in rocchio_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        return sorted([(score, doc_id) for doc_id, score in merged_scores.items()], key=functools.cmp_to_key(comparator))
     else:
         return parse_free_text_query(terms_array, relevant_docids)
 
 def get_ranking_for_boolean_query(posting_list, relevant_docids):
     """
     The scoring for boolean queries is going to follow CSS Specificity style
-    Title matches will be worth 20, court 10 and content 1 (numbers to be confirmed)
+    Title matches will be worth 5k, court 4k and content 6k (numbers to be confirmed)
     The overall relevance of the documents would be the sum of all these scores
     Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
-    Then the resultant score is 11
+    Then the resultant score is 6k
     """
-    relevant_score = 50
-    title_score = 5
-    court_score = 4
-    date_score = 3
-    content_score = 2
+    title_score = 5000
+    court_score = 4000
+    content_score = 2000
+    date_score = 1000
 
     def get_boolean_query_scores(field):
         if field == Field.TITLE:
@@ -480,13 +486,6 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
             scores[posting.doc_id] = len(posting.positions) * score
         else:
             scores[posting.doc_id] += len(posting.positions) * score
-
-    # Add to the ones judged relevant by humans
-    for relevant_docid in relevant_docids:
-        if relevant_docid not in scores:
-            scores[relevant_docid] = relevant_score
-        else:
-            scores[relevant_docid] += relevant_score
 
     # Now we do the sorting
     sorted_results = sorted([(score, doc_id) for doc_id, score in scores.items()], key=functools.cmp_to_key(comparator))
@@ -586,6 +585,7 @@ def split_query(query):
             else:
                 start_index = current_index + 1
                 is_in_phrase = True
+                is_boolean_query = True
         elif current_char == " ":
             # this is the end of a non-phrasal query term, can append directly
             if not is_in_phrase:
@@ -606,9 +606,6 @@ def query_expansion(query, unexpanded_tokens_arr):
     #Take in a word from the query
     #Expand on the synonyms of the word
     #return the set of synonyms
-
-    stop_words = set(stopwords.words('english'))
-
     syn_set = set()
 
     for s in wordnet.synsets(query):
@@ -651,10 +648,6 @@ def run_search(dict_file, postings_file, queries_file, results_file):
             res = []
 
             res = parse_query(query, relevant_docids)
-
-            if len(res) < 5:
-                print(query, "Somethings off here boss")
-                res.append(("debug", query))
 
             r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
