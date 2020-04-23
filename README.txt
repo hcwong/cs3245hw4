@@ -47,7 +47,6 @@ Note: Phrasal queries are done by finding PostingLists for each individual term,
 documents containing all the terms in the phrase. In our program, since phrasal queries may occur in a mixture of queries with free-text queries or boolean
 queries, we classify them (by default as free-text, otherwise with whatever it is in a mixture of queries with) and run them together with those queries.
 
-
 1. Free-text queries
 
 For free-text queries, query expansion is implemented. We first take in the list of words/ phrases in the query terms and measure the query term weight of 
