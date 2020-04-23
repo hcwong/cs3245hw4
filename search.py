@@ -81,15 +81,17 @@ def stem_query(arr):
 def boost_score_based_on_field(field, score):
     # TODO: Decide on an appropriate boost value
     court_boost = 1.3
+    date_boost = 1.5
     title_boost = 2
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:
         return score * court_boost
+    elif field == Field.DATE_POSTED:
+        return score * date_boost
     else:
         # no boost to score
         return score
-    return score
 
 def cosine_score(tokens_arr, relevant_docids):
     """
@@ -185,6 +187,7 @@ def cosine_score(tokens_arr, relevant_docids):
             # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
+                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
@@ -250,11 +253,12 @@ def obtain_all_cos_score_terms(relevant_docids, tokens_arr):
     res = []
     for impt in relevant_docids:
         ls = ALL_DOC_IDS[impt]
-        for t in ls:
+        for t in ls[:5] if len(ls) > 5 else ls:
             res.append(t)
     processed_terms = [stem_word(w.strip().lower()) for w in tokens_arr]
     for t in processed_terms:
         res.append(t)
+    res = [filtered_term for filtered_term in res if filtered_term.isalnum()]
     return set(res) # all unique now, all are processed
 
 def remove_term_processed_from_set(term, union_of_relevant_doc_top_terms):
@@ -286,9 +290,11 @@ def get_query_weight(df, tf):
     We use ltc in the calculation for queries, as opposed to lnc for documents
     This requires document frequency df, term frequency tf, total number of documents N
     """
+    if (tf == 0 or df == 0):
+        return 0
+
     N = len(ALL_DOC_IDS)
     # df, tf and N are all guranteed to be at least 1, so no error is thrown here
-
     return (1 + math.log(tf, 10)) * math.log(N/df, 10)
 
 def find_term(term):
@@ -639,6 +645,10 @@ def run_search(dict_file, postings_file, queries_file, results_file):
             res = []
 
             res = parse_query(query, relevant_docids)
+
+            if len(res) < 5:
+                print(query, "Somethings off here boss")
+            res.append(("debug", query))
 
             r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 

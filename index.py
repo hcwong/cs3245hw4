@@ -7,6 +7,7 @@ import getopt
 import math
 import os
 import nltk
+from nltk.corpus import stopwords
 import pickle
 import csv
 import functools
@@ -17,7 +18,8 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 18
+K = 10
+ENG_STOPWORDS = set(stopwords.words('english'))
 
 def filter_punctuations(s, keep_quo=False):
     """
@@ -79,11 +81,14 @@ class VSM:
     Represents the Vector Space Model
     """
     def __init__(self, in_dir, d_file, p_file):
-        self.dictionary = {}  # content, title, court
+        self.dictionary = {}  # content, title, court, date_posted
         self.docid_term_mappings = {} # (doc_id:{top K most common terms:their count} for that doc_id) mappings
         self.in_dir = in_dir
         self.d_file = d_file
         self.p_file = p_file
+
+        global ENG_STOPWORDS
+        ENG_STOPWORDS = self.process_words(ENG_STOPWORDS)
 
     def build(self):
         """
@@ -147,9 +152,6 @@ class VSM:
         print("Calculating document vector length")
         self.calculate_doc_length()
 
-        for _, posting_list in self.dictionary.items():
-            posting_list.generate_skip_list()
-
     def get_documents(self):
         """
         Returns a list of complete documents which have positional indexes for content, title, court, and date_posted
@@ -161,15 +163,13 @@ class VSM:
         documents = self.process_file()
         print("Done processing file")
 
-        # Then we handle the fields: content, title and court (to generate position index)
-        # of 'content_positional_indexes', 'title_positional_indexes' is made from 'title', 'court_positional_indexes'
+        # Then we handle the fields: content, title and date_posted and court (to generate position index)
         count = 0
         for document in documents:
             document['content_positional_indexes'] = self.generate_positional_indexes(document['content'])  # Part 1: Content
             document['title_positional_indexes'] = self.generate_positional_indexes(document['title'])  # Part 2: Title
             document['court_positional_indexes'] = self.generate_positional_indexes(document['court'])  # Part 3: Court
             document['date_posted_positional_indexes'] = self.generate_positional_indexes(document['date_posted'].split()[0])  # Part 4: Date_posted
-            set_of_documents.append(document)
 
             # To obtain the top K terms for the current document
             accumulate_counts = {}
@@ -188,6 +188,7 @@ class VSM:
                     break;
 
             # Now, document['top_K'] will be a list of the top K terms for the document
+            set_of_documents.append(document)
 
             print(count," Generated positional indexes")
             count += 1
@@ -200,11 +201,12 @@ class VSM:
         Finds each term's counts in the pos_ind dictionary and reflects this count contribution in the result_counts dictionary
         """
         for term in pos_ind:
-            counts = len(pos_ind[term])
-            if term in result_counts:
-                result_counts[term] += counts
-            else:
-                result_counts[term] = counts
+            if term not in ENG_STOPWORDS:
+                counts = len(pos_ind[term])
+                if term in result_counts:
+                    result_counts[term] += counts
+                else:
+                    result_counts[term] = counts
 
     def process_file(self):
         with open(self.in_dir, encoding='utf-8') as f:
@@ -379,7 +381,6 @@ class Posting:
         self.doc_id = doc_id
         self.field = field
         self.positions = positions
-        self.pointer = None
 
     def var_byte_encoding(self):
         self.positions = encode(self.positions)
@@ -418,12 +419,6 @@ class PostingList:
 
     def get(self, index):
         return self.postings[index]
-
-    def generate_skip_list(self):
-        skip_distance = math.floor(math.sqrt(len(self.postings)))
-        # -1 to prevent reading from invalid index, due to 0 indexed lists
-        for i in range(len(self.postings) - skip_distance - 1):
-            self.postings[i].pointer = self.postings[i + skip_distance]
 
     def generate_string_of_postinglist(self):
         s = 'size ' + str(self.unique_docids) + '  '

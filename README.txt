@@ -49,7 +49,7 @@ queries, we classify them (by default as free-text, otherwise with whatever it i
 
 1. Free-text queries
 
-For free-text queries, query expansion is implemented. We first take in the list of words/ phrases in the query terms and measure the query term weight of 
+For free-text queries, query expansion is implemented. We first take in the list of words/phrases in the query terms and measure the query term weight of 
 each individual words/phrases. If the weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion
 on every word and phrases, and only to be done on the important words. Once the query is expanded, the list of words/phreases are then processed.
 
