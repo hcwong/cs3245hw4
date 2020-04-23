@@ -543,17 +543,20 @@ def parse_free_text_query(terms, relevant_docids):
         # Weight for individual queries needs to be measured here as well in order to check which quey words/ phrases are the more important ones and
         # are worth expanding
 
-        #We are assuming free-text queries will not include phrasal queries (ie. phrases incased in " ")
+        # Entirely phrasal queries are processed as part of free-text queries, but they will have no query expansion
+        is_phrasal_query = False
         if " " in t:
             posting_list = perform_phrase_query(t)
+            is_phrasal_query = True
         else:
             posting_list = find_term(t)
         if posting_list is None:
             continue
 
-        query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[t])
-        if query_term_weight >= 1.2 :
-            expanded_terms.extend(query_expansion(t, terms))
+        if not(is_phrasal_query):
+            query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[t])
+            if query_term_weight >= 1.2 :
+                expanded_terms.extend(query_expansion(t, terms))
 
     expanded_terms = process(expanded_terms)
     res = cosine_score(expanded_terms, relevant_docids)
