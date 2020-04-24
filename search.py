@@ -437,10 +437,12 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
 # Splits the boolean queries up and takes the union of the doc_ids if there are not enough results
 def query_parsing(terms_array):
     phrase_multiplier = 2
-    query_parse_penalty = 0.5
+    query_parse_penalty = 0.05
     merged_scores = {}
     for term in terms_array:
         term_result = parse_boolean_query([term], [])
+        if (len(term_result) > 500): # Terms with high df are likely to be less irrelevant to the boolean query, so we exclude from union
+            continue
         for score, doc_id in term_result:
             if " " in term:
                 score *= phrase_multiplier
