@@ -434,15 +434,48 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 curr2 += 1
     return merged_list
 
+# Splits the boolean queries up and takes the union of the doc_ids if there are not enough results
+def query_parsing(terms_array):
+    phrase_multiplier = 2
+    query_parse_penalty = 0.5
+    merged_scores = {}
+    for term in terms_array:
+        term_result = parse_boolean_query([term], [])
+        for score, doc_id in term_result:
+            if " " in term:
+                score *= phrase_multiplier
+            score *= query_parse_penalty
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+    return sorted([(score, doc_id) for doc_id, score in merged_scores.items()], key=functools.cmp_to_key(comparator))
+
 def parse_query(query, relevant_docids):
     terms_array, is_boolean_query = split_query(query)
     if is_boolean_query:
-        # Get the boolean results and then apply rocchio on the relevant documents
+        # Get the boolean results and then apply query parsing and apply rocchio on the relevant documents
+        # Only apply latter 2 if not enough boolean results in the first place.
+        # In desc order of importance: Original query -> query parsing -> rocchio
         # Merge their results and output accordingly according to the comparator function
+
+        # First filter out all the AND keywords from the term array
+        terms_array = [term for term in terms_array if term != AND_KEYWORD]
         boolean_results = parse_boolean_query(terms_array, relevant_docids)
-        rocchio_results = parse_free_text_query([], relevant_docids)
+        query_parse_results = {}
+        rocchio_results = {}
+        if len(boolean_results) < 1000:
+            query_parse_results = query_parsing(terms_array)
+        if len(boolean_results) + len(query_parse_results) < 1000:
+            rocchio_results = parse_free_text_query([], relevant_docids)
+
         merged_scores = {}
         for score, doc_id in boolean_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        for score, doc_id in query_parse_results:
             if doc_id not in merged_scores:
                 merged_scores[doc_id] = score
             else:
@@ -497,12 +530,9 @@ def parse_boolean_query(terms, relevant_docids):
     Takes in the array of terms from the query
     Returns the posting list of all the phrase
     """
-    # First filter out all the AND keywords from the term array
-    filtered_terms = [term for term in terms if term != AND_KEYWORD]
-
-    filtered_terms = process(filtered_terms)
+    processed_terms = process(terms)
     # Get the posting list of the first word
-    first_term = filtered_terms[0]
+    first_term = processed_terms[0]
     res_posting_list = None
     if " " in first_term:
         res_posting_list = perform_phrase_query(first_term)
@@ -513,7 +543,7 @@ def parse_boolean_query(terms, relevant_docids):
         return []
 
     # Do merging for the posting lists of the rest of the terms
-    for term in filtered_terms[1:]:
+    for term in processed_terms[1:]:
         term_posting_list = None
         if " " in term:
             term_posting_list = perform_phrase_query(term)
