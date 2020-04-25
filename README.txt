@@ -51,9 +51,9 @@ queries, we classify them (by default as free-text, otherwise with whatever it i
 
 1. Free-text queries
 
-For free-text queries, query expansion is implemented. We first take in the list of words in the query terms and measure the query term weight of each individual words/
-phrases. If the query term weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion on every word, and only
-to be done on the important words. Once the query is expanded, the list of words/phrases are then processed. 
+For free-text queries, query expansion is implemented. We first take in the list of words/phrases in the query terms and measure the query term weight of 
+each individual words/phrases. If the weight is more than or equal to a particular threshold, query expansion is done on it. This is to avoid query expansion
+on every word and phrases, and only to be done on the important words. Once the query is expanded, the list of words/phreases are then processed.
 
 We process the words/phrases into final index terms by filtering through punctuations and removing some of them like apostrophes. As 
 this process can possibly generate additional unneeded spaces, we will then remove these unnecessary spaces to prevent them from being detected as a term. Next, 
@@ -94,16 +94,18 @@ which contain terms in the initial query. Documents which are relevant will ther
 Meanwhile, for boolean queries, only "AND" operatore are supported. Hence, "AND" operation is conducted on all the words/phrases that appear in boolean query. 
 
 Firstly, all "AND" keyword are removed from the query. Similiarly, we process the words/phrases into final index terms by filtering through punctuations. We then obtain 
-the postinglist for the word/phrase. 
+the PostingList for the word/phrase. 
 
 It is to note that when processing phrases, because gap encoding is used to store the position of the posting, we would need to add the previous values to obtain the 
 actual positional index. Then, the actual positional indexes are compared to ensure that the query terms are next to each other.
 The merging of the positions is done as per the lecture, where we look for terms that have position +1 of the original query.
 
+
 For the purposes of this project, we only merge the positions if the fields and the doc_id of the Posting is the same, due to the way we calculated positional indices in the first step
 
-Once the postinglist for the word/phrase is obtained, they are then merged to obtain a posting lists where all the query terms appears in the listed document. 
-The final posting list are then ranked. Scores are added for every query term present in the document. The score are dependent on which field the term appears in. 
+Once the PostingLists for the word/phrase is obtained, they are then merged (if a phrase) to obtain a PostingList where all the query terms appear in the listed document. 
+The final posting list are then ranked. Scores are added for every query term present in the document. The scores are dependent on which field the term appears in. 
+
 Terms that are the doc_id have higher score, followed by title, court then content. After the scores are tallied, the document with the highest score are placed first in the output.
 
 However, because of the nature of intersection operations, it is highly likely that we will not get any results from the strict boolean query.
@@ -125,7 +127,7 @@ rather long to generate), these values may not be the most optimal. Still, we ha
 
 Workload
 
-The team split work objectively, with one person working on overall architecture (such as the functional skeleton), one on Rocchio Algorithm, one on Query Expension via
+The team split work objectively, with one person focusing on overall architecture (such as the functional skeleton), one on Rocchio Algorithm, one on Query Expension via
 Manual Thesaurus, and one on documentation. Moreover, we overlap and check on one anothers' parts.
 
 == Files included with this submission ==

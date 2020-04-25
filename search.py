@@ -22,9 +22,12 @@ POSTINGS_FILE_POINTER = None # reference for postings file
 DOC_LENGTHS = None # to store all document lengths
 ALL_DOC_IDS = None # to store all doc_ids
 AND_KEYWORD = "AND"
+
+# Optimisation values
 EMPHASIS_ON_ORIG = 1.0 # initial query
 EMPHASIS_ON_RELDOC = 0.75 # relevant marked documents
 EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING = 1.1
+# Note there are also zone/field specific multipliers in some of the respective functions below
 
 def comparator(tup1, tup2):
     """
@@ -40,16 +43,15 @@ def comparator(tup1, tup2):
 # Parsing
 def filter_punctuations(s):
     """
-    Takes in String s and returns the processed version of it
-    Replaces certain punctuations with space, to be removed later on
-    Removes others
+    Returns the processed version of the input String s
+    Replaces certain punctuations with space, to be removed later on, and removes some punctuations
     Note: We will never encounter double inverted commas here, as they are already
     removed in identifying phrases for phrasal queries
     """
     space = '''!?;:\\.*+=_~<>[]{}(/)'''
     remove = """'-""" # e.g. apostrophe. Add in more if needed
 
-    # Note: replacing any character with a space will incur a " " term (a space)
+    # Note: replacing any character with a space will incur an unnecessary " " term (a space)
     # We remove this space later on in the process function
 
     for character in s:
@@ -61,28 +63,34 @@ def filter_punctuations(s):
 
 def process(arr):
     """
-    Filters out some punctuations and then case-folds to lowercase
-    Takes in a String array and returns the result array
+    Filters out some punctuations, then case-folds to lowercase and
+    then returns the result array of terms
     """
     return [filter_punctuations(term) for term in arr if term != " "]
 
 def stem_word(term):
+    """
+    Stems the given term
+    """
     stemmer = nltk.stem.porter.PorterStemmer()
     return stemmer.stem(term)
 
 def stem_query(arr):
     """
-    Takes in a case-folded array of terms previously processed for punctuations, tokenises it, and returns a list of stemmed terms
+    Returns a list of stemmed terms
+    Input is a case-folded array of terms previously processed for punctuations
     """
     return [stem_word(term) for term in arr]
 
 # Ranking
 
 def boost_score_based_on_field(field, score):
-    # TODO: Decide on an appropriate boost value
-    court_boost = 1.3
-    date_boost = 1.5
-    title_boost = 2
+    """
+    Returns the score value after multiplying it with a zone/field-specific multiplier
+    """
+    court_boost = 1.5
+    date_boost = 2
+    title_boost = 4
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:
@@ -95,43 +103,48 @@ def boost_score_based_on_field(field, score):
 
 def cosine_score(tokens_arr, relevant_docids):
     """
-    Takes in an array of terms, and returns a list of the top scoring documents based on cosine similarity scores with respect to the query terms
+    Takes in an array of terms, and returns a list of the top scoring documents
+    based on cosine similarity scores with respect to the query terms
+
+    Note: Rocchio Algorithm Query Refinement is done here only for
+    tokens_arr that have more than one term and are therefore not entirely phrasal
+
+    In other words: If the tokens_arr only contains 1 phrase, then no Rocchio is performed
+    (This is since phrasal queries are never mixed with free-text queries, only mixed with boolean queries)
     """
 
     # We first obtain query vector value for specific term
     # Then, if needed, we perform Rocchio Algorithm to finalise the query vector based on relevance assessments
-    # Once done, we calculate each term's score contribution to every one of its documents' overall score as with the standard VSM
-    # This will reflect the effects of the Rocchio Algorithm (if performed prior)
+    # Once done, we calculate each term's score contribution (with normalisation) to every one of its documents' overall score
 
-    # Rocchio Algorithm:
+    # Rocchio Algorithm (done term-wise):
     # 1. Take in original query vector value for this term
     # 2. Take in all relevant_docids vector values for this term, accumulate them
-    # 3. Average/normalise the accumulated value to account for within-document distribution
-    # 3. Use this as the new query vector's value for this term
+    # 3. Average the accumulated value, normalising each value to account for within-document distribution
+    # 3. Use this averaged value as the new query vector's value for this term
     # note: This approach is done term-wise, and we iterate through the term's posting list
     # to be able to process all score contributions from each document that contains the term
 
-    # We normalise at the end to optimise speed.
-
     # Step 1: Preparation
-    scores = {} # to store all cosine similarity scores for each query term
-    term_frequencies = Counter(tokens_arr) # the query's count vector for every of its terms, to obtain data for pointwise multiplication
-    # Set of all relevant documents' top K (already processed) terms, and query's processed terms
+    scores = {}
+    term_frequencies = Counter(tokens_arr) # the query's count vector for its terms, to obtain data for pointwise multiplication
 
-    # All terms inside are ALREADY PROCESSED aka filtered for punctuations, casefolded to lowercase, stemmed
+    # To store all finalised terms (filetered for punctuations, casefolded, stemmed) from both relevant documents' top K and the query
+    # Note that the top K terms are always single terms. Only the query may contain phrases
     union_of_relevant_doc_top_terms = obtain_all_cos_score_terms(relevant_docids, tokens_arr)
 
-
     # Step 2: Obtain PostingList of interest
-    is_entirely_phrasal = True # if False, should perform Rocchio for Query Refinement
+    is_entirely_phrasal = True
+    # If there is free-text, it will become False and we perform Rocchio later on
+    # Otherwise, if it is entirely phrasal (just a single query of a phrase), then we should not perform Rocchio
     for term in tokens_arr:
-        # Document IDs and zone/field types are nicely reflected in the term's PostingList
+        # Document IDs and zone/field types are reflected as part of the term's PostingList
         # Only documents with Postings (regardless of zone/field type) of this term will have non-zero score contributions
         posting_list = None
 
         # At this point, phrasal queries will have terms which are phrases (has a space within);
-        # otherwise, it is a freetext query -> Perform Rocchio Algorithm Query Refinement
-        # note that in a mixture of both freetext and phrasal queries, we will perform Query Reginement
+        # Otherwise, it is a freetext query -> Perform Rocchio Algorithm Query Refinement
+        # Note: in a mixture of both freetext and phrasal queries, we will perform Query Refinement
         query_type = "YET DECIDED"
         if " " in term:
             query_type = "PHRASAL"
@@ -146,20 +159,19 @@ def cosine_score(tokens_arr, relevant_docids):
             # Invalid query term: Move on to next
             continue
 
-
         # Step 3: Obtain the query vector's value for pointwise multiplication (Perform Relevance Feedback, if needed)
         query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[term]) # before/without Rocchio
 
         # Query Refinement: Rocchio Algorithm (Part 1: common terms with query)
-        # Want to use given relevant documents to get entry of the term in the refined query vector
+        # Want to use all given relevant documents to get entry of the term in the refined query vector
         if (query_type == "FREETEXT") and (len(relevant_docids) != 0):
-            # We are doing query refinement for this current term; no need to do again later: remove it first!
-            # current term is not processed -> Need to process first to compare
+
+            # We are doing query refinement for this current term (needs to be processed in-function)
+            # No need to do again later: remove it first!
             remove_term_processed_from_set(term, union_of_relevant_doc_top_terms)
-            # calculate the centroid value for tf for calculating refined query value for this term
-            # Note: documents can have a 0 contribution to the centroid value for a particular term if they don't contain it
+
+            # Note: documents have a 0 contribution to the centroid value for a particular term if they don't contain it
             relevant_centroid_value = calculate_relevant_centroid_weight(relevant_docids, posting_list)
-            # Use the relevant 'centroid' to calculate refined query entry
             if (relevant_centroid_value > 0):
                 # most of the time, it should arrive at this branch
                 query_term_weight = (EMPHASIS_ON_ORIG * query_term_weight) + (EMPHASIS_ON_RELDOC * relevant_centroid_value)
@@ -167,7 +179,7 @@ def cosine_score(tokens_arr, relevant_docids):
 
         # Step 4: Perform scoring by pointwise multiplication for the 2 vectors
         # Accumulate all score contribution from the current term before normalisation (done later) for lnc.ltc scheme
-        # Boost accordingly to fields/zones
+        # Boost score accordingly to fields/zones
         for posting in posting_list.postings:
             doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in lnc calculation as tf >= 1
             if posting.doc_id not in scores:
@@ -176,46 +188,41 @@ def cosine_score(tokens_arr, relevant_docids):
                 scores[posting.doc_id] += (boost_score_based_on_field(posting.field, doc_term_weight) * query_term_weight)
 
     # Step 5 (Optional): Rocchio Part 2 (if needed; for terms in overall top_K yet to be considered)
-    # We begin with an initial query vector value of 0. And then we add the averaged lawyer-marked-relevant documents' 'centroid' value
-    # Note the terms here are already processed; we need to use find_already_processed_term(term) function
+    # Only done if not entirely phrasal because phrasal queries requires exact (any expansion is done outside of this function)
     if (is_entirely_phrasal == False) and len(relevant_docids) != 0:
-        # for terms that have not been covered, but need to be considered by Rocchio
+
         while (len(union_of_relevant_doc_top_terms) > 0):
 
-            # Find PostingLists of terms until no more; removed from the set by .pop()
+            # Keep finding PostingLists of terms until no more
             next_term = union_of_relevant_doc_top_terms.pop()
-            # Find posting list for the term
             posting_list = find_already_processed_term(next_term)
             if posting_list is None:
-                print("Not found")
                 continue # skip if invalid term
 
             # Calculate refined query value for multiplication
             # Initialised at 0 since ltc scheme gives 0 for query not containing current term
-            # this is entirely made from contributions of the relevant documents
+            # This value is entirely from contributions of the relevant documents
             final_query_value = (EMPHASIS_ON_RELDOC) * calculate_relevant_centroid_weight(relevant_docids, posting_list)
 
-            # as before
             for posting in posting_list.postings:
-                # Obtain weight of term for each document and perform calculation
-                doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in log calculation as tf >= 1
+                doc_term_weight = 1 + math.log(len(posting.positions), 10) # guaranteed no error in calculation as tf >= 1
                 if posting.doc_id not in scores:
                     scores[posting.doc_id] = (boost_score_based_on_field(posting.field, doc_term_weight) * final_query_value)
                 else:
                     scores[posting.doc_id] += (boost_score_based_on_field(posting.field, doc_term_weight) * final_query_value)
 
-
     # Step 6: Perform normalisation to consider the length of the document vector
-    # We save on dividing by the query vector length which is constant and does not affect score comparison
-    doc_ids_in_tokens_arr = find_by_document_id(tokens_arr) # for manual post-processing to emphasis more on documents with original query terms further
+    # We save on dividing by the (refined) query vector length which is constant and does not affect score comparison
+    doc_ids_in_tokens_arr = find_by_document_id(tokens_arr)
     results = []
     for doc_id, total_weight in scores.items():
+
         ranking_score = total_weight/DOC_LENGTHS[doc_id]
-        # Now we check if any of the query terms matches
-        # TODO: Improve the doc_id criterion below
+
+        # Manual post-processing to emphasise more on documents with original query terms further
         # Since the user searches for terms which he/she tends to want, we place higher emphasis on these
         if doc_id in doc_ids_in_tokens_arr:
-            ranking_score *= EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING # manual post processing
+            ranking_score *= EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING
         results.append((ranking_score, doc_id))
 
     # Step 7: Sort the results in descending order of score
@@ -224,8 +231,9 @@ def cosine_score(tokens_arr, relevant_docids):
 
 def find_term_specific_weight_for_specified_id(doc_id, posting_list):
     """
-    Returns the accumulated weight (regardless of field type) for the stated document of doc_id seen in posting_list (which is a PostingList for a given dictionary term)
+    Returns the accumulated ltc weight (regardless of field type) for the given doc_id seen in posting_list (which is a PostingList for a given dictionary term)
     Score is returned in ltc scheme, following that for query
+    This function is used as part of calculating the centroid's value
     """
 
     result = 0 # remains 0 if the doc_id marked relevant does not contain the term that the PostingList represents for
@@ -237,7 +245,7 @@ def find_term_specific_weight_for_specified_id(doc_id, posting_list):
             # number of positions in positional index is the number of occurrences of this term in that field
             tf += len(posting.positions)
 
-    # if the specified document does contain the term, return ltc weight (following query), otherwise return 0
+    # if the specified document doesn't contain the term, return 0
     if (tf > 0):
         df = posting_list.unique_docids
         N = len(ALL_DOC_IDS)
@@ -247,28 +255,30 @@ def find_term_specific_weight_for_specified_id(doc_id, posting_list):
 
 def obtain_all_cos_score_terms(relevant_docids, tokens_arr):
     """
-    Returns a set of all terms which are accumulated from
-    all relevant documents' top_K terms, and the processed version of those in tokens_arr
+    Returns a set of terms accumulated from the relevant documents' top_K, and the tokens_arr
+    All the terms in the result are unique and are processed to dictionary terms or the processed version of tokens_arr terms
     """
     res = []
+    # add all from relevant docs
     for impt in relevant_docids:
         ls = ALL_DOC_IDS[impt]
-        for t in ls[:5] if len(ls) > 5 else ls:
+        for t in ls:
             res.append(t)
+    # add all from query
     processed_terms = [stem_word(w.strip().lower()) for w in tokens_arr]
     for t in processed_terms:
         res.append(t)
     res = [filtered_term for filtered_term in res if filtered_term.isalnum()]
-    return set(res) # all unique now, all are processed
+    # make the result all unique
+    return set(res)
 
 def remove_term_processed_from_set(term, union_of_relevant_doc_top_terms):
     """
-    Removes the processed version of the term from a set that stores this processed term
+    Removes the processed version of the given term from a set that stores this processed term
     """
     processed_term = stem_word(term.strip().lower())
     if processed_term in union_of_relevant_doc_top_terms:
         union_of_relevant_doc_top_terms.remove(processed_term)
-
 
 def calculate_relevant_centroid_weight(relevant_docids, posting_list):
     """
@@ -284,11 +294,10 @@ def calculate_relevant_centroid_weight(relevant_docids, posting_list):
 
 def get_query_weight(df, tf):
     """
-    Calculates the tf-idf weight for a term in the query vector
-    Takes in document frequency df, term frequency tf, and returns the resulting tf-idf weight
+    Calculates the tf-idf weight value for a term in the query vector
     We treat the query as a document itself, having its own term count vector
     We use ltc in the calculation for queries, as opposed to lnc for documents
-    This requires document frequency df, term frequency tf, total number of documents N
+    ltc calculation requires document frequency df, term frequency tf, total number of documents N
     """
     if (tf == 0 or df == 0):
         return 0
@@ -299,10 +308,9 @@ def get_query_weight(df, tf):
 
 def find_term(term):
     """
-    Returns the list representation (postings) of the term's PostingList
+    Returns the list representation (.postings attribute) of the term's PostingList
     or an empty list if no such term exists in index
     """
-    # NOTE: LOWERCASING IS ONLY DONE HERE.
     term = term.strip().lower()
     term = stem_word(term)
     if term not in D:
@@ -311,6 +319,9 @@ def find_term(term):
     return pickle.load(POSTINGS_FILE_POINTER)
 
 def find_already_processed_term(term):
+    """
+    Similar to find_term, but the input term has already been processed to dictionary term format
+    """
     if term not in D:
         return None
     POSTINGS_FILE_POINTER.seek(D[term])
@@ -328,9 +339,11 @@ def find_by_document_id(terms):
                 document_ids.append(int(term))
     return document_ids
 
-# Takes in a phrasal query in the form of an array of terms and returns the doc ids which have the phrase
-# Note: Only use this for boolean retrieval, not free text mode
 def perform_phrase_query(phrase_query):
+    """
+    Takes in a phrasal query in the form of an array of terms and returns the doc ids which have the phrase
+    Note: Only use this for boolean retrieval, not free-text mode
+    """
     # Defensive programming, if phrase is empty, return false
     if not phrase_query:
         return False
@@ -348,10 +361,11 @@ def perform_phrase_query(phrase_query):
 
     return phrase_posting_list
 
-# Returns merged positions for phrasal query
-# positions2 comes from the following term and positions1 from
-# the preceeding term
 def merge_positions(positions1, positions2, doc_id):
+    """
+    Returns merged positions for a phrasal query (we use positional indexes with gap encoding)
+    positions2 comes from the following term and positions1 from the preceeding term
+    """
     merged_positions = []
     L1 = len(positions1)
     L2 = len(positions2)
@@ -384,12 +398,12 @@ def merge_positions(positions1, positions2, doc_id):
             index1 += 1
     return merged_positions
 
-# Performs merging of two posting lists
-# Note: Should perform merge positions is only used for phrasal queries
-# Term frequency does not matter for normal boolean queries
 def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
     """
     Merges list1 and list2 for the AND boolean operator
+    list1 and list2 are PostingLists
+    Note: Should perform merge positions is only used for phrasal queries
+    Note: Term frequency does not matter for normal boolean queries
     """
     merged_list = PostingList()
     L1 = len(list1.postings)
@@ -416,50 +430,108 @@ def merge_posting_lists(list1, list2, should_perform_merge_positions = False):
                 curr2 += 1
             # Case 2: posting1's field smaller than posting2's field
             elif posting1.field < posting2.field:
-                # TODO: To prove but I think this hunch is correct
-                # There should not be a case where posting2 has the same field but has merged it in previously.
-                # This insert should never be a duplicate
-                merged_list.insert_posting(posting1)
+                if not should_perform_merge_positions:
+                    merged_list.insert_posting(posting1)
                 curr1 += 1
             # Case 3: Converse of case 2
             else:
-                merged_list.insert_posting(posting2)
+                if not should_perform_merge_positions:
+                    merged_list.insert_posting(posting2)
                 curr2 += 1
         else:
-            # Else if there is a opportunity to jump and the jump is less than the doc_id of the other list
-            # then jump, which increments the index by the square root of the length of the list
-            # if posting1.pointer != None and posting1.pointer.doc_id < posting2.doc_id:
-                # curr1 = posting1.pointer.index
-            # elif posting2.pointer != None and posting2.pointer.doc_id < posting1.doc_id:
-                # curr2 = posting2.pointer.index
-            # # If we cannot jump, then we are left with the only option of incrementing the indexes one by one
-            # else:
             if posting1.doc_id < posting2.doc_id:
                 curr1 += 1
             else:
                 curr2 += 1
     return merged_list
 
+def query_parsing(terms_array):
+    """
+    Splits the boolean queries up and takes the union of the doc_ids
+    Note: This is used when there are not enough results for the boolean query (AND)
+    """
+    phrase_multiplier = 2
+    query_parse_penalty = 0.05
+    merged_scores = {}
+    for term in terms_array:
+        term_result = parse_boolean_query([term], [])
+        if (len(term_result) > 1200): # Terms with high df are likely to be irrelevant to the boolean query, so we exclude from union
+            continue
+        for score, doc_id in term_result:
+            if " " in term:
+                score *= phrase_multiplier
+            score *= query_parse_penalty
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+    return sorted([(score, doc_id) for doc_id, score in merged_scores.items()], key=functools.cmp_to_key(comparator))
+
 def parse_query(query, relevant_docids):
+    """
+    Determines and executes the type of query: boolean or free-text
+    Note: Single phrases are executed as a free-text; multiple phrases are boolean queries
+    This is since it is stated that only boolean queries allow multiple phrases
+    """
     terms_array, is_boolean_query = split_query(query)
     if is_boolean_query:
-        return parse_boolean_query(terms_array, relevant_docids)
+        # Get the boolean results
+        # If not enough results, then apply query_parse to obtain OR result
+        # If still not enough results, apply rocchio on the relevant documents)
+        # In desc order of importance:
+        # Original query (AND) -> query parsing (OR) -> free-text with rocchio (phrase as individual words, free-text)
+        # Merge their results and output accordingly according to the comparator function
+
+        # First filter out all the AND keywords from the term array
+        terms_array = [term for term in terms_array if term != AND_KEYWORD]
+        boolean_results = parse_boolean_query(terms_array, relevant_docids)
+        query_parse_results = {}
+        rocchio_results = {}
+        if len(boolean_results) < 1000:
+            # parse each term as a separate query and then perform an OR merge
+            query_parse_results = query_parsing(terms_array)
+        if len(boolean_results) + len(query_parse_results) < 1000:
+            # break down all phrases into words, and add the individual freetext query results
+            all_single_words_in_phrases = []
+            for search_term in terms_array:
+                if " " in search_term:
+                    all_single_words_in_phrases.extend(search_term.split())
+            rocchio_results = parse_free_text_query(all_single_words_in_phrases, relevant_docids)
+            rocchio_results = rocchio_results[:500] if len(rocchio_results) < 500 else rocchio_results
+
+        merged_scores = {}
+        for score, doc_id in boolean_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        for score, doc_id in query_parse_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        for score, doc_id in rocchio_results:
+            if doc_id not in merged_scores:
+                merged_scores[doc_id] = score
+            else:
+                merged_scores[doc_id] += score
+        return sorted([(score, doc_id) for doc_id, score in merged_scores.items()], key=functools.cmp_to_key(comparator))
     else:
+        # freetext query with possible Rocchio algorithm query refinement
         return parse_free_text_query(terms_array, relevant_docids)
 
 def get_ranking_for_boolean_query(posting_list, relevant_docids):
     """
     The scoring for boolean queries is going to follow CSS Specificity style
-    Title matches will be worth 20, court 10 and content 1 (numbers to be confirmed)
+    Title matches will be worth 5k, court 4k and content 6k (numbers to be confirmed)
     The overall relevance of the documents would be the sum of all these scores
     Example: If the resultant posting list has two postings for doc_id xxx, with fields COURT and CONTENT
-    Then the resultant score is 11
+    Then the resultant score is 6k
     """
-    relevant_score = 50
-    title_score = 5
-    court_score = 4
-    date_score = 3
-    content_score = 2
+    title_score = 5000000
+    court_score = 4000000
+    content_score = 2000000
+    date_score = 100000
 
     def get_boolean_query_scores(field):
         if field == Field.TITLE:
@@ -479,13 +551,6 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
         else:
             scores[posting.doc_id] += len(posting.positions) * score
 
-    # Add to the ones judged relevant by humans
-    for relevant_docid in relevant_docids:
-        if relevant_docid not in scores:
-            scores[relevant_docid] = relevant_score
-        else:
-            scores[relevant_docid] += relevant_score
-
     # Now we do the sorting
     sorted_results = sorted([(score, doc_id) for doc_id, score in scores.items()], key=functools.cmp_to_key(comparator))
 
@@ -493,15 +558,11 @@ def get_ranking_for_boolean_query(posting_list, relevant_docids):
 
 def parse_boolean_query(terms, relevant_docids):
     """
-    Takes in the array of terms from the query
-    Returns the posting list of all the phrase
+    Returns the posting list of all the terms in the array of representing the query
     """
-    # First filter out all the AND keywords from the term array
-    filtered_terms = [term for term in terms if term != AND_KEYWORD]
-
-    filtered_terms = process(filtered_terms)
+    processed_terms = process(terms)
     # Get the posting list of the first word
-    first_term = filtered_terms[0]
+    first_term = processed_terms[0]
     res_posting_list = None
     if " " in first_term:
         res_posting_list = perform_phrase_query(first_term)
@@ -509,10 +570,11 @@ def parse_boolean_query(terms, relevant_docids):
         res_posting_list = find_term(first_term)
 
     if res_posting_list is None:
+        # short-circuit result for empty PostingList in an AND operation
         return []
 
     # Do merging for the posting lists of the rest of the terms
-    for term in filtered_terms[1:]:
+    for term in processed_terms[1:]:
         term_posting_list = None
         if " " in term:
             term_posting_list = perform_phrase_query(term)
@@ -526,31 +588,34 @@ def parse_boolean_query(terms, relevant_docids):
     return get_ranking_for_boolean_query(res_posting_list, relevant_docids)
 
 def parse_free_text_query(terms, relevant_docids):
-    # TODO: See below (delete once done)
-    #Take in list of original, unexpanded query terms
-    #Calculate the query_term_weight of the individual terms from the original query
-    #Query terms with high weight >= 1.2, would be further expanded and their synonyms will be added to the original term
-    #Process the expanded list of query terms
-
+    """
+    Performs the free-text query (or single phrase query)
+    Possibly performs Query Expansion and Rocchio Algorithm Query Refinement
+    """
     term_frequencies = Counter(terms)
     expanded_terms = []
     for t in terms:
         expanded_terms.append(t)
         # this is the same way posting list for individual phrases/words have been obtained in cosine_score
-        # Weight for individual queries needs to be measured here as well in order to check which quey words/ phrases are the more important ones and
-        # are worth expanding
+        # Weight for individual queries needs to be measured here to check which query words/phrases are
+        # the more important ones and therefore worth expanding
 
-        #We are assuming free-text queries will not include phrasal queries (ie. phrases incased in " ")
+        # Entirely phrasal queries are processed as part of free-text queries, but they will have no query expansion
+        is_phrasal_query = False
         if " " in t:
             posting_list = perform_phrase_query(t)
+            is_phrasal_query = True
         else:
             posting_list = find_term(t)
         if posting_list is None:
             continue
 
-        query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[t])
-        if query_term_weight >= 1.2 :
-            expanded_terms.extend(query_expansion(t, terms))
+        if not is_phrasal_query:
+            query_term_weight = get_query_weight(posting_list.unique_docids, term_frequencies[t])
+            # Query terms with weight >= 1.2 are considered significant in the search,
+            # Should be further expanded and their synonyms will be added to the original term
+            if query_term_weight >= 1.2 :
+                expanded_terms.extend(query_expansion(t, terms))
 
     expanded_terms = process(expanded_terms)
     res = cosine_score(expanded_terms, relevant_docids)
@@ -558,7 +623,7 @@ def parse_free_text_query(terms, relevant_docids):
 
 def split_query(query):
     """
-    split_query extracts out phrases and terms from the unedited first line of the query file
+    Extracts out and returns phrases and terms from the unedited first line of the query file
     Note: Phrases for phrasal queries are identified by " double inverted commas,
     which are removed in the process of creating these phrases
     """
@@ -581,6 +646,7 @@ def split_query(query):
             else:
                 start_index = current_index + 1
                 is_in_phrase = True
+                is_boolean_query = True
         elif current_char == " ":
             # this is the end of a non-phrasal query term, can append directly
             if not is_in_phrase:
@@ -598,12 +664,9 @@ def split_query(query):
     return [term for term in terms if term], is_boolean_query
 
 def query_expansion(query, unexpanded_tokens_arr):
-    #Take in a word from the query
-    #Expand on the synonyms of the word
-    #return the set of synonyms
-
-    stop_words = set(stopwords.words('english'))
-
+    """
+    Returns a set of synonyms for the given query word
+    """
     syn_set = set()
 
     for s in wordnet.synsets(query):
@@ -612,7 +675,7 @@ def query_expansion(query, unexpanded_tokens_arr):
                 syn_set.add(l.name())
 
     return syn_set
-# Below are the code provided in the original Homework search.py file, with edits to run_search to use our implementation
+
 
 def usage():
     print("usage: " + sys.argv[0] + " -d dictionary-file -p postings-file -q file-of-queries -o output-file-of-results")
@@ -646,10 +709,6 @@ def run_search(dict_file, postings_file, queries_file, results_file):
             res = []
 
             res = parse_query(query, relevant_docids)
-
-            if len(res) < 5:
-                print(query, "Somethings off here boss")
-            res.append(("debug", query))
 
             r_file.write(" ".join([str(r[1]) for r in res]) + "\n")
 
