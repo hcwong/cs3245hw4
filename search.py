@@ -441,7 +441,7 @@ def query_parsing(terms_array):
     merged_scores = {}
     for term in terms_array:
         term_result = parse_boolean_query([term], [])
-        if (len(term_result) > 500): # Terms with high df are likely to be less irrelevant to the boolean query, so we exclude from union
+        if (len(term_result) > 1200): # Terms with high df are likely to be less irrelevant to the boolean query, so we exclude from union
             continue
         for score, doc_id in term_result:
             if " " in term:
