@@ -106,10 +106,12 @@ def cosine_score(tokens_arr, relevant_docids):
     Takes in an array of terms, and returns a list of the top scoring documents
     based on cosine similarity scores with respect to the query terms
 
-    Note: Rocchio Algorithm Query Refinement is done here only for
-    tokens_arr that have more than one term and are therefore not entirely phrasal
+    Note: Rocchio Algorithm Query Refinement is done here only for tokens_arr that have more than one term and are therefore not entirely phrasal
+    Note: This function can, but not necessarily will, be used for queries containing a single phrase.
+    Elements of any semblance to phrasal queries were previous EXPERIMENTS to see performance if we processed single phrase queries as part of free-text queries.
+    However, these don't affect our intended functionality, and they can be used for future development. So, we chose to let them remain here.
 
-    In other words: If the tokens_arr only contains 1 phrase, then no Rocchio is performed
+    In other words: If somehow, phrases appear in tokens_arr, and the tokens_arr only contains 1 phrase, then no Rocchio is performed. But, our function still works as intended.
     (This is since phrasal queries are never mixed with free-text queries, only mixed with boolean queries)
     """
 
@@ -134,7 +136,7 @@ def cosine_score(tokens_arr, relevant_docids):
     union_of_relevant_doc_top_terms = obtain_all_cos_score_terms(relevant_docids, tokens_arr)
 
     # Step 2: Obtain PostingList of interest
-    is_entirely_phrasal = True
+    is_entirely_phrasal = True # (EXPERIMENT)
     # If there is free-text, it will become False and we perform Rocchio later on
     # Otherwise, if it is entirely phrasal (just a single query of a phrase), then we should not perform Rocchio
     for term in tokens_arr:
@@ -147,8 +149,8 @@ def cosine_score(tokens_arr, relevant_docids):
         # Note: in a mixture of both freetext and phrasal queries, we will perform Query Refinement
         query_type = "YET DECIDED"
         if " " in term:
-            query_type = "PHRASAL"
-            posting_list = perform_phrase_query(term) # do merging of PostingLists
+            query_type = "PHRASAL" #(EXPERIMENT)
+            posting_list = perform_phrase_query(term) # do merging of PostingLists # (EXPERIMENT)
 
         else:
             query_type = "FREETEXT"
@@ -451,7 +453,7 @@ def query_parsing(terms_array):
     Note: This is used when there are not enough results for the boolean query (AND)
     """
     phrase_multiplier = 2
-    query_parse_penalty = 0.05
+    query_parse_penalty = 0.005
     merged_scores = {}
     for term in terms_array:
         term_result = parse_boolean_query([term], [])
@@ -470,8 +472,7 @@ def query_parsing(terms_array):
 def parse_query(query, relevant_docids):
     """
     Determines and executes the type of query: boolean or free-text
-    Note: Single phrases are executed as a free-text; multiple phrases are boolean queries
-    This is since it is stated that only boolean queries allow multiple phrases
+    Note: Phrase queries are run as part of boolean queries
     """
     terms_array, is_boolean_query = split_query(query)
     if is_boolean_query:
@@ -497,7 +498,7 @@ def parse_query(query, relevant_docids):
                 if " " in search_term:
                     all_single_words_in_phrases.extend(search_term.split())
             rocchio_results = parse_free_text_query(all_single_words_in_phrases, relevant_docids)
-            rocchio_results = rocchio_results[:500] if len(rocchio_results) < 500 else rocchio_results
+            rocchio_results = rocchio_results[:500] if len(rocchio_results) > 500 else rocchio_results
 
         merged_scores = {}
         for score, doc_id in boolean_results:
@@ -589,7 +590,7 @@ def parse_boolean_query(terms, relevant_docids):
 
 def parse_free_text_query(terms, relevant_docids):
     """
-    Performs the free-text query (or single phrase query)
+    Performs the free-text query
     Possibly performs Query Expansion and Rocchio Algorithm Query Refinement
     """
     term_frequencies = Counter(terms)
@@ -600,11 +601,19 @@ def parse_free_text_query(terms, relevant_docids):
         # Weight for individual queries needs to be measured here to check which query words/phrases are
         # the more important ones and therefore worth expanding
 
-        # Entirely phrasal queries are processed as part of free-text queries, but they will have no query expansion
+        # Phrasal queries should not appear in this function. However, the code block (separated by a line break)
+        # right below this is for our previous experiment on performance if we were to run single phrasal queries as part of
+        # free-text. These are marked with a "(EXPERIMENT)". Note they have some relevant parts thereafter.
+        # We chose to still leave them here as they are still functional in accordance with
+        # our current implementation, but just that the single phrasal queries are not used in this function. Also, this is in
+        # case we want to use this for future development.
+
+        # (EXPERIMENT) Entirely phrasal queries are processed as part of free-text queries, but they will have no query expansion
+        # (EXPERIMENT) Moreover, this is to handle the case if somehow,
         is_phrasal_query = False
         if " " in t:
-            posting_list = perform_phrase_query(t)
-            is_phrasal_query = True
+            posting_list = perform_phrase_query(t) # (EXPERIMENT)
+            is_phrasal_query = True # (EXPERIMENT)
         else:
             posting_list = find_term(t)
         if posting_list is None:
