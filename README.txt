@@ -143,6 +143,8 @@ It seems placing a lower significance on relevant documents and higher on origin
 - EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING multiplies the score for terms that appear in the original query, which we understand to be more significant.
 This is proven to help in ranking document IDs containing the query term higher.
 - There are also multipliers for the type of field/zone that the term appears in, which affects the score contribution of these Postings for their associated document.
+- We have also experimented with parsing pure phrase queries under free text queries, but assigning 0 weight to them. The code can be seen under the `cosine_score` function. 
+However, after checking the forum, we decided to treat them as a boolean query of just a single phrase. We have however, left the experiment code in search.py as reference.
 
 We have played around and varied them to try to optimise our search results, but due to the limited number of times that our index, and the leaderboard can be generated, 
 these values may not be the most optimal. Still, we have tried our best on our end to find optimal values.
