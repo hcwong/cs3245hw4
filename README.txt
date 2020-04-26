@@ -41,11 +41,9 @@ type. Here, in split_query, we are splitting the original query given from the q
 inverted commas in a phrasal query). In the process, if we encounter the Boolean Retrival keyword "AND", we know this is a boolean query and set is_boolean_query 
 to True. Otherwise, we will process this term in a free-text query. 
 
-Please note that phrasal queries (appearing with "AND") will be performed as part of a boolean query. However, if the query is purely phrasal, we will process it 
-as a free-text query, which will then be processed as a purely phrasal query. In other words, if the entire query contains only one phrase and nothing else, it 
-will be processed as part of free-text query. If the entire query contains more than one phrase, or contains a phrase combined with "AND" keyword(s), then it is 
-considered a boolean query. A phrasal query can easily be identified by spaces (" ") in its term, because the split_query function produces the respective phrases 
-whenever it encounters the double inverted commas. At the end of this function, we will have a sequence of words and phrases. Once done, the free-text or boolean 
+Please note that phrasal queries (appearing with "AND") will be performed as part of a boolean query. A phrasal query can easily be identified by spaces (" ") in its term, because the split_query function produces the respective phrases 
+whenever it encounters the double inverted commas. As long as the statement has a quotation mark pair, it will be parsed as a boolean query.
+At the end of this function, we will have a sequence of words and phrases. Once done, the free-text or boolean 
 query (which contains any phrasal queries) is then executed.
 
 DIFFERENT TYPES OF SEARCH QUERIES:
