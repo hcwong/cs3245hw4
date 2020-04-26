@@ -18,7 +18,7 @@ from enum import IntEnum
 # Self-defined constants, functions and classes
 
 # For Rocchio Coefficients
-K = 16
+K = 14
 ENG_STOPWORDS = set(stopwords.words('english'))
 
 def filter_punctuations(s, keep_quo=False):
