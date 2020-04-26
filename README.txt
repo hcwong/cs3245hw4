@@ -112,6 +112,9 @@ However, because of the nature of intersection operations, it is highly likely t
 This problem is further compounded by Prof Jin's post on forum that the boolean match must be exact. 
 Hence, we use the relevant doc ids provided by the judge and apply Rocchio on them to get a list of likely documents that match it.
 We weight these documents less than any boolean result, as the boolean result is likely to be rarer, so to speak. We merge the boolean and Rocchio results and return it accordingly.
+A free text query is then done along the rocchio to give more results.
+
+We also do query parsing, or breaking down the boolean results into their constitutent terms and then doing a search on that instead
 
 EXPERIMENTS
 

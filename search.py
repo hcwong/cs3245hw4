@@ -451,7 +451,7 @@ def query_parsing(terms_array):
     Note: This is used when there are not enough results for the boolean query (AND)
     """
     phrase_multiplier = 2
-    query_parse_penalty = 0.05
+    query_parse_penalty = 0.005
     merged_scores = {}
     for term in terms_array:
         term_result = parse_boolean_query([term], [])
@@ -497,7 +497,7 @@ def parse_query(query, relevant_docids):
                 if " " in search_term:
                     all_single_words_in_phrases.extend(search_term.split())
             rocchio_results = parse_free_text_query(all_single_words_in_phrases, relevant_docids)
-            rocchio_results = rocchio_results[:500] if len(rocchio_results) < 500 else rocchio_results
+            rocchio_results = rocchio_results[:500] if len(rocchio_results) > 500 else rocchio_results
 
         merged_scores = {}
         for score, doc_id in boolean_results:
