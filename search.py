@@ -88,15 +88,15 @@ def boost_score_based_on_field(field, score):
     """
     Returns the score value after multiplying it with a zone/field-specific multiplier
     """
-    court_boost = 1.5
-    date_boost = 2
+    content_boost = 1.5
+    court_boost = 2
     title_boost = 4
     if field == Field.TITLE:
         return score * title_boost
     elif field == Field.COURT:
         return score * court_boost
-    elif field == Field.DATE_POSTED:
-        return score * date_boost
+    elif field == Field.CONTENT:
+        return score * content_boost
     else:
         # no boost to score
         return score

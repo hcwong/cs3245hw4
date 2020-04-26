@@ -18,7 +18,8 @@ accumulate the counts and identify the top K terms for each document (K is an ar
 dictionary entry document[top_K] for every document. This is to facilitate Rocchio Algorithm Query Refinement later on during searches.
 
 To save on indexing space, we also employ gap encoding and variable byte encoding for positional indices. We first gap encode everything, and afterwards use an
-external file/library to do variable byte encoding.
+external file/library to do variable byte encoding. We also removed stop words to save space, apart from the fact that the top K will now be more relevant when
+stop words are removed.
 
 Once the set_of_documents contains all documents, we accumulate in tokens_list all the positional indexes for each term, regardless of which zone/field it 
 appears as. The tokens_list indexes are sorted by term, then doc_id, then by title, court, date_posted, and finally content. Once we have all this information 
@@ -41,39 +42,38 @@ type. Here, in split_query, we are splitting the original query given from the q
 inverted commas in a phrasal query). In the process, if we encounter the Boolean Retrival keyword "AND", we know this is a boolean query and set is_boolean_query 
 to True. Otherwise, we will process this term in a free-text query. 
 
-Please note that phrasal queries (appearing with "AND") will be performed as part of a boolean query. A phrasal query can easily be identified by spaces (" ") in its term, because the split_query function produces the respective phrases 
-whenever it encounters the double inverted commas. As long as the statement has a quotation mark pair, it will be parsed as a boolean query.
-At the end of this function, we will have a sequence of words and phrases. Once done, the free-text or boolean 
-query (which contains any phrasal queries) is then executed.
+Please note that phrasal queries (appearing with "AND") will be performed as part of a boolean query. A phrasal query can easily be identified by spaces (" ") in
+its term, because the split_query function produces the respective phrases whenever it encounters the double inverted commas (as long as the statement has a 
+quotation mark pair, it will be parsed as a boolean query). At the end of this function, we will have a sequence of words and phrases. Once done, the free-text 
+or boolean query (which contains any phrasal queries) is then executed.
 
 DIFFERENT TYPES OF SEARCH QUERIES:
 
 Note: Phrasal queries are done by finding PostingLists for each individual term, and then performing an AND merge. This way, we are able to get the final 
-documents containing all the terms in the phrase. In our program, since phrasal queries may occur in a mixture of queries with free-text queries or boolean
-queries, we classify them appropriately in our program (as mentioned above) and run them together with those queries.
+documents containing all the terms in the phrase. In our program, phrasal queries are classified appropriately in our program (as mentioned above) and we run them 
+together with those queries.
 
 1. Free-text queries
 
-For free-text queries, query expansion is implemented. We first take in the list of words/phrases in the query terms and measure their weight of to identify the
-more significant terms that we should expand on. If the weight is more than or equal to a particular threshold, query expansion is done on it. This avoids 
-unnecessary query expansion, which can affect the performance/accuracy of our results. Once the query is expanded, we have a finalised list of words/phrases to
-process for the free-text query.
+For free-text queries, query expansion is implemented. We first take in the list of query words and measure their weight of to identify the more significant ones
+that we should expand on. If the weight is more than or equal to a particular threshold, query expansion is done on it. This avoids unnecessary query expansion, 
+which can affect the performance/accuracy of our results. Once the query is expanded, we have a finalised list to process for the free-text query.
 
-We process the words/phrases into final index terms by filtering through punctuations, replacing some of them with spaces and removing some of them (e.g. 
+We process this list into final index terms by filtering through punctuations, replacing some of them with spaces and removing some of them (e.g. 
 apostrophes). As this process can possibly generate additional unneeded spaces, we will remove these unnecessary spaces to prevent them from being detected as 
 a term. Next, we will perform scoring and ranking, and possibly query refinement via the Rocchio Algorithm if needed. Note that here, with knowledge of the 
-which documents are relevant, we can perform the query refinement for free-text queries which are not entirely phrasal queries (a query with only one phrase).
+which documents are relevant, we can perform the query refinement for the queries.
 
 To facilitate the Rocchio Algorithm, we use the previously obtained list of top K most common terms of each relevant-marked document, and obtain their union
-with those in the current query. This is done regardless of whether the Rocchio Algorithm is actually performed, as there is a high chance that the query is 
-not entirely phrasal. As the Rocchio Algorithm is performed term-wise, the corresponding terms are removed accordingly.
+with those in the current query to form a set. Then, as the Rocchio Algorithm is performed term-wise, the corresponding terms are removed whenever we encounter a 
+new term.
 
 Next, we will go through all the query terms to calculate score contributions first, before moving on to those in the union but are not in the query. This happens 
 term-wise in the following manner:
 
-1. Obtain PostingList for the current term, performing a phrasal query if the current term is a phrase. 
-2. If there is no such PostingList, this term is an invalid term and we move on to the next term. Else, if phrasal query gives an empty PostingList, there is a 
-score contribution of zero so we simply move on to the next term.
+1. Obtain PostingList for the current term.
+2. If there is no such PostingList, this term is an invalid term and we move on to the next term. Moreover, an empty PostingList has a score contribution of zero 
+so we simply move on to the next term.
 3. Calculate the ltc weight for the current query term.
 
 
@@ -93,10 +93,9 @@ as we recognise the importance of fields, each field will have a multiplier atta
 
 
 (If Rocchio Algorithm is performed)
-7. If the query is not entirely phrasal, we will perform Rocchio Algorithm for the remaining/untouched terms in the unioned set. Once again, we will remove the 
-current term each time to mark it as done. Note that the main difference here, compared to the terms which appear in the query, is that the query's inital value 
-is 0 because it does not contain these terms. So, the score contribution is now derived entirely from the relevant-marked documents' centroid values. This is done
-for all the terms in the unioned set.
+7. If needed, we will perform Rocchio Algorithm for the remaining/untouched terms in the unioned set. Once again, we will remove the current term each time to mark 
+it as done. Note that the main difference here, compared to the terms which appear in the query, is that the query's inital value is 0 because it does not contain 
+these terms. So, the score contribution is now derived entirely from the relevant-marked documents' centroid values. This is done for all the terms in the unioned set.
 
 
 8. Finally, once we have all the accumulated scores, we will perform normalisation on these lnc.ltc scores obtained from all the above score contributions, and do
@@ -129,28 +128,31 @@ If still we do not have enough results, then we break down the phrasal query int
 Algorithm (using the relevant doc ids provided by the judge) to get a list of likely documents that match it. However, we weight these documents less than the boolean 
 result, as the boolean result is likely to be rarer, and that this is a backup measure. We then merge all our results and return them accordingly.
 
-EXPERIMENTS
+EXPERIMENTS (More details in BONUS.docx)
 
-We have quite a few arbitrary values: 
+We have quite a few arbitrary values, tweaks, optimisations and experimenting of their associated values, including: 
 
 - K (index.py) determines how many most common terms of a document do we store in the index, which will then affect how many terms we will use for the Rocchio Algorithm.
 It seems that K value of around 12-14 gives better results based on the leaderboard.
 - EMPHASIS_ON_ORIG (search.py) determines how much emphasis we place on the original query's value for a particular term's score in the Rocchio Algorithm
 - EMPHASIS_ON_RELDOC (search.py) determines how much emphasis we place on the relevant-marked documents for a particular term's score in the Rocchio Algorithm.
-It seems placing a lower significance on relevant documents and higher on original query may give better performance.
+It seems placing a lower significance on relevant-marked documents and higher on original query may give better performance.
 - EMPHASIS_ORIG_MULTIPLIER_POSTPROCESSING multiplies the score for terms that appear in the original query, which we understand to be more significant.
 This is proven to help in ranking document IDs containing the query term higher.
 - There are also multipliers for the type of field/zone that the term appears in, which affects the score contribution of these Postings for their associated document.
+We weighed them according to experiment results, and also predictions on how likely the importance of each field/zone is to the user performing the search.
+The importance we decided to go with, in descending order is: title > court > content > date.
 - We have also experimented with parsing pure phrase queries under free text queries, but assigning 0 weight to them. The code can be seen under the `cosine_score` function. 
 However, after checking the forum, we decided to treat them as a boolean query of just a single phrase. We have however, left the experiment code in search.py as reference.
+- We also tried to see the difference in including and removing stop words. Removing stop words improved performance in general.
 
 We have played around and varied them to try to optimise our search results, but due to the limited number of times that our index, and the leaderboard can be generated, 
-these values may not be the most optimal. Still, we have tried our best on our end to find optimal values.
+these values may not be the most optimal. Still, we have tried our best on our end to find optimal values. You can read more about all these in BONUS.docx.
 
 Workload
 
 The team split work objectively, with one person focusing on overall architecture (such as the functional skeleton), one on Rocchio Algorithm, one on Query Expension via
-Manual Thesaurus, and one on documentation. Moreover, we overlap and check on one anothers' parts.
+Manual Thesaurus, and one on documentation and phrasal query. Moreover, we consistently overlap and check on one anothers' parts as we value the logical flow.
 
 == Files included with this submission ==
 
